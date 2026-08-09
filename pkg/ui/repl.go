@@ -16,14 +16,20 @@ import (
 	"flashwhip/pkg/config"
 )
 
-// RunInteractiveREPL starts an interactive terminal session with multi-stage thinking & tool loop tracking.
-func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.Config) error {
-	r, err := runner.NewInMemory("flashwhip", appAgent)
-	if err != nil {
-		return fmt.Errorf("failed to initialize interactive runner: %w", err)
+// RunInteractiveREPL launches an interactive multi-turn REPL prompt loop.
+func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.Config, targetSessionID string) error {
+	fmt.Print(RenderBanner(cfg.ModelName, cfg.BaseURL))
+	fmt.Println()
+
+	sessionID := targetSessionID
+	if sessionID == "" {
+		sessionID = fmt.Sprintf("chat-%d", time.Now().Unix())
 	}
 
-	sessionID := fmt.Sprintf("chat-%d", time.Now().Unix())
+	r, err := runner.NewInMemory("flashwhip", appAgent)
+	if err != nil {
+		return fmt.Errorf("failed to initialize runner: %w", err)
+	}
 
 	homeDir, _ := os.UserHomeDir()
 	historyFile := filepath.Join(homeDir, ".flashwhip_history")

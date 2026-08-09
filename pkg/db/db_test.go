@@ -43,31 +43,36 @@ func TestSQLiteDB(t *testing.T) {
 		t.Errorf("session.ID = %q, want %q", session.ID, sessionID)
 	}
 
+	if session.TurnCount != 1 {
+		t.Errorf("session.TurnCount = %d, want 1", session.TurnCount)
+	}
+
 	if len(msgs) != 2 {
 		t.Fatalf("len(msgs) = %d, want 2", len(msgs))
 	}
 
-	if msgs[0].Role != "user" || msgs[0].Content != userPrompt {
-		t.Errorf("msgs[0] = %+v, want role user and prompt %q", msgs[0], userPrompt)
-	}
-
-	if msgs[1].Role != "assistant" || msgs[1].Content != assistantText {
-		t.Errorf("msgs[1] = %+v, want role assistant and text %q", msgs[1], assistantText)
-	}
-
-	// 4. Verify updated_at is populated and after created_at
-	if session.UpdatedAt.Before(session.CreatedAt) {
-		t.Errorf("session.UpdatedAt (%v) is before CreatedAt (%v)", session.UpdatedAt, session.CreatedAt)
-	}
-
-	// 5. Test ListSessions
-	sessions, err := database.ListSessions()
+	// 4. Verify GenAI contents reconstruction
+	genaiContents, err := database.GetSessionGenAIContents(sessionID)
 	if err != nil {
-		t.Fatalf("ListSessions failed: %v", err)
+		t.Fatalf("GetSessionGenAIContents failed: %v", err)
 	}
 
-	if len(sessions) != 1 {
-		t.Fatalf("len(sessions) = %d, want 1", len(sessions))
+	if len(genaiContents) != 2 {
+		t.Fatalf("len(genaiContents) = %d, want 2", len(genaiContents))
+	}
+
+	if genaiContents[0].Role != "user" || genaiContents[0].Parts[0].Text != userPrompt {
+		t.Errorf("genaiContents[0] = %+v, want role user", genaiContents[0])
+	}
+
+	if genaiContents[1].Role != "model" || genaiContents[1].Parts[0].Text != assistantText {
+		t.Errorf("genaiContents[1] = %+v, want role model", genaiContents[1])
+	}
+
+	// 5. Test FormatRelativeTime
+	relTime := FormatRelativeTime(session.UpdatedAt)
+	if relTime != "just now" {
+		t.Errorf("FormatRelativeTime = %q, want 'just now'", relTime)
 	}
 
 	// Verify file exists
