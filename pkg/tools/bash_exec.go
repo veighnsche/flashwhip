@@ -14,8 +14,9 @@ import (
 )
 
 type ExecCommandInput struct {
-	Command string `json:"command" jsonschema:"The shell command line to execute (e.g. 'go test ./...', 'git status')"`
-	Cwd     string `json:"cwd,omitempty" jsonschema:"Optional relative or absolute working directory path to execute the command in"`
+	Command        string `json:"command" jsonschema:"The shell command line to execute (e.g. 'go test ./...', 'git status')"`
+	Cwd            string `json:"cwd,omitempty" jsonschema:"Optional relative or absolute working directory path to execute the command in"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty" jsonschema:"Optional execution timeout in seconds (default: 60). Increase for long-running commands like 'go test ./...' or 'npm install'."`
 }
 
 type ExecCommandOutput struct {
@@ -48,7 +49,11 @@ func executeShellCommand(_ agent.Context, in ExecCommandInput) (ExecCommandOutpu
 		return ExecCommandOutput{}, fmt.Errorf("command cannot be empty")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	timeoutSecs := in.TimeoutSeconds
+	if timeoutSecs <= 0 {
+		timeoutSecs = 60
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSecs)*time.Second)
 	defer cancel()
 
 	startTime := time.Now()
@@ -66,6 +71,15 @@ func executeShellCommand(_ agent.Context, in ExecCommandInput) (ExecCommandOutpu
 
 	exitCode := 0
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return ExecCommandOutput{
+				Command:    cmdStr,
+				Cwd:        in.Cwd,
+				Stderr:     fmt.Sprintf("command timed out after %ds", timeoutSecs),
+				ExitCode:   124,
+				DurationMs: durationMs,
+			}, nil
+		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
