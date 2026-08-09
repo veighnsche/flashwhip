@@ -24,7 +24,10 @@ const (
 
 // LoadConfig creates a Config instance, pulling from environment variables with fallback defaults.
 func LoadConfig() *Config {
-	baseURL := os.Getenv("OLLAMA_BASE_URL")
+	baseURL := os.Getenv("FLASHWHIP_URL")
+	if baseURL == "" {
+		baseURL = os.Getenv("OLLAMA_BASE_URL")
+	}
 	if baseURL == "" {
 		baseURL = os.Getenv("OPENAI_BASE_URL")
 	}
@@ -35,7 +38,10 @@ func LoadConfig() *Config {
 		baseURL = strings.TrimRight(baseURL, "/") + "/v1"
 	}
 
-	modelName := os.Getenv("OLLAMA_MODEL")
+	modelName := os.Getenv("FLASHWHIP_MODEL")
+	if modelName == "" {
+		modelName = os.Getenv("OLLAMA_MODEL")
+	}
 	if modelName == "" {
 		modelName = os.Getenv("OPENAI_MODEL")
 	}
@@ -43,7 +49,10 @@ func LoadConfig() *Config {
 		modelName = DefaultModelName
 	}
 
-	apiKey := os.Getenv("OLLAMA_API_KEY")
+	apiKey := os.Getenv("FLASHWHIP_API_KEY")
+	if apiKey == "" {
+		apiKey = os.Getenv("OLLAMA_API_KEY")
+	}
 	if apiKey == "" {
 		apiKey = os.Getenv("OPENAI_API_KEY")
 	}
