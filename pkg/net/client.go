@@ -16,7 +16,10 @@ var (
 func DefaultHTTPClient() *http.Client {
 	defaultClientOnce.Do(func() {
 		defaultClient = &http.Client{
-			Timeout: 15 * time.Second,
+			// Timeout intentionally left at zero (unset).
+			// Context-based cancellation is the only timeout mechanism.
+			// A hardcoded HTTP-level deadline would prematurely kill long-running
+			// SSE model-streaming calls before the request has a chance to complete.
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
 				DialContext: (&net.Dialer{
