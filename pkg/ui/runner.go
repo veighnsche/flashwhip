@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
@@ -15,18 +14,7 @@ import (
 
 // ExecuteStreamLoop runs the streaming event loop for a given prompt session and updates the UI stream tracker.
 func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, userMsg *genai.Content, tracker *StreamTracker) error {
-	var userPrompt string
-	if userMsg != nil {
-		var sb strings.Builder
-		for _, p := range userMsg.Parts {
-			if p.Text != "" {
-				sb.WriteString(p.Text)
-			}
-		}
-		userPrompt = sb.String()
-	}
-
-	var assistantTextBuilder strings.Builder
+	var assistantParts []*genai.Part
 
 	for ev, err := range r.Run(ctx, "user", sessionID, userMsg, agent.RunConfig{StreamingMode: agent.StreamingModeSSE}) {
 		if err != nil {
@@ -46,7 +34,7 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 						} else {
 							tracker.TransitionToOutputting()
 							fmt.Print(part.Text)
-							assistantTextBuilder.WriteString(part.Text)
+							assistantParts = append(assistantParts, part)
 						}
 						_ = os.Stdout.Sync()
 					}
@@ -55,6 +43,7 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 						tracker.TransitionToIdle()
 						fmt.Printf("\n%s %s(%v)\n", ToolCallBadge.Render("⚡ [Tool Executing]:"), part.FunctionCall.Name, part.FunctionCall.Args)
 						_ = os.Stdout.Sync()
+						assistantParts = append(assistantParts, part)
 					}
 				}
 
@@ -69,15 +58,18 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 
 	tracker.TransitionToIdle()
 
-	// Persist to embedded SQLite database (text only: excludes thoughts & tool calls)
+	// Persist to embedded SQLite database (structured GenAI Content trees)
 	database, dErr := db.DefaultDB()
 	if dErr == nil && database != nil {
-		if userPrompt != "" {
-			_ = database.SaveMessage(sessionID, "user", userPrompt)
+		if userMsg != nil {
+			_ = database.SaveContent(sessionID, userMsg)
 		}
-		finalText := assistantTextBuilder.String()
-		if finalText != "" {
-			_ = database.SaveMessage(sessionID, "assistant", finalText)
+		if len(assistantParts) > 0 {
+			assistantContent := &genai.Content{
+				Role:  "model",
+				Parts: assistantParts,
+			}
+			_ = database.SaveContent(sessionID, assistantContent)
 		}
 	}
 

@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,17 +17,19 @@ import (
 type Session struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
+	Workspace string    `json:"workspace"`
 	TurnCount int       `json:"turn_count"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Message struct {
-	ID        int64     `json:"id"`
-	SessionID string    `json:"session_id"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          int64          `json:"id"`
+	SessionID   string         `json:"session_id"`
+	Role        string         `json:"role"`
+	Content     string         `json:"content"`
+	JSONPayload string         `json:"json_payload,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
 }
 
 type DB struct {
@@ -85,6 +88,7 @@ func (d *DB) migrate() error {
 	CREATE TABLE IF NOT EXISTS sessions (
 		id TEXT PRIMARY KEY,
 		title TEXT NOT NULL,
+		workspace TEXT NOT NULL DEFAULT '',
 		turn_count INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL
@@ -95,6 +99,7 @@ func (d *DB) migrate() error {
 		session_id TEXT NOT NULL,
 		role TEXT NOT NULL,
 		content TEXT NOT NULL,
+		json_payload TEXT,
 		created_at DATETIME NOT NULL,
 		FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 	);
@@ -105,46 +110,68 @@ func (d *DB) migrate() error {
 		return err
 	}
 
-	// Schema migration for pre-existing databases missing turn_count
+	// Migrations for pre-existing tables
 	_, _ = d.sqlDB.Exec("ALTER TABLE sessions ADD COLUMN turn_count INTEGER NOT NULL DEFAULT 0;")
+	_, _ = d.sqlDB.Exec("ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT '';")
+	_, _ = d.sqlDB.Exec("ALTER TABLE messages ADD COLUMN json_payload TEXT;")
 
 	return nil
 }
 
-// SaveMessage stores a text-only message (user or assistant) and updates the session's updated_at timestamp.
-func (d *DB) SaveMessage(sessionID, role, content string) error {
-	content = strings.TrimSpace(content)
-	if content == "" || sessionID == "" {
+// SaveContent saves a structured genai.Content object (including text & tool calls) and updates session metadata.
+func (d *DB) SaveContent(sessionID string, content *genai.Content) error {
+	if content == nil || sessionID == "" {
 		return nil
+	}
+
+	if content.Role == "assistant" {
+		content.Role = "model"
+	}
+
+	var textParts []string
+	for _, p := range content.Parts {
+		if p.Text != "" && !p.Thought {
+			textParts = append(textParts, p.Text)
+		}
+	}
+	textSummary := strings.Join(textParts, " ")
+	if textSummary == "" && len(content.Parts) > 0 {
+		textSummary = fmt.Sprintf("[%s message]", content.Role)
+	}
+
+	jsonBytes, err := json.Marshal(content)
+	jsonPayload := ""
+	if err == nil {
+		jsonPayload = string(jsonBytes)
 	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	now := time.Now()
+	pwd, _ := os.Getwd()
 
-	// Ensure session exists
 	var exists bool
-	err := d.sqlDB.QueryRow("SELECT EXISTS(SELECT 1 FROM sessions WHERE id = ?)", sessionID).Scan(&exists)
+	err = d.sqlDB.QueryRow("SELECT EXISTS(SELECT 1 FROM sessions WHERE id = ?)", sessionID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("failed to check session existence: %w", err)
 	}
 
 	if !exists {
-		title := content
+		title := textSummary
 		if len(title) > 60 {
 			title = title[:60] + "..."
 		}
 		turnIncrement := 0
-		if role == "assistant" || role == "model" {
+		if content.Role == "assistant" || content.Role == "model" {
 			turnIncrement = 1
 		}
-		_, err = d.sqlDB.Exec("INSERT INTO sessions (id, title, turn_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", sessionID, title, turnIncrement, now, now)
+		_, err = d.sqlDB.Exec("INSERT INTO sessions (id, title, workspace, turn_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", sessionID, title, pwd, turnIncrement, now, now)
 		if err != nil {
 			return fmt.Errorf("failed to create session %q: %w", sessionID, err)
 		}
 	} else {
-		if role == "assistant" || role == "model" {
+		if content.Role == "assistant" || content.Role == "model" {
 			_, err = d.sqlDB.Exec("UPDATE sessions SET updated_at = ?, turn_count = turn_count + 1 WHERE id = ?", now, sessionID)
 		} else {
 			_, err = d.sqlDB.Exec("UPDATE sessions SET updated_at = ? WHERE id = ?", now, sessionID)
@@ -154,12 +181,23 @@ func (d *DB) SaveMessage(sessionID, role, content string) error {
 		}
 	}
 
-	_, err = d.sqlDB.Exec("INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)", sessionID, role, content, now)
+	_, err = d.sqlDB.Exec("INSERT INTO messages (session_id, role, content, json_payload, created_at) VALUES (?, ?, ?, ?, ?)", sessionID, content.Role, textSummary, jsonPayload, now)
 	if err != nil {
 		return fmt.Errorf("failed to insert message for session %q: %w", sessionID, err)
 	}
 
 	return nil
+}
+
+// SaveMessage stores a text-only message (user or assistant) and updates the session's updated_at timestamp.
+func (d *DB) SaveMessage(sessionID, role, content string) error {
+	c := &genai.Content{
+		Role: role,
+		Parts: []*genai.Part{
+			{Text: content},
+		},
+	}
+	return d.SaveContent(sessionID, c)
 }
 
 // GetSession returns session info and all text messages for sessionID.
@@ -168,12 +206,12 @@ func (d *DB) GetSession(sessionID string) (*Session, []Message, error) {
 	defer d.mu.Unlock()
 
 	var s Session
-	err := d.sqlDB.QueryRow("SELECT id, title, turn_count, created_at, updated_at FROM sessions WHERE id = ?", sessionID).Scan(&s.ID, &s.Title, &s.TurnCount, &s.CreatedAt, &s.UpdatedAt)
+	err := d.sqlDB.QueryRow("SELECT id, title, workspace, turn_count, created_at, updated_at FROM sessions WHERE id = ?", sessionID).Scan(&s.ID, &s.Title, &s.Workspace, &s.TurnCount, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get session %q: %w", sessionID, err)
 	}
 
-	rows, err := d.sqlDB.Query("SELECT id, session_id, role, content, created_at FROM messages WHERE session_id = ? ORDER BY id ASC", sessionID)
+	rows, err := d.sqlDB.Query("SELECT id, session_id, role, content, json_payload, created_at FROM messages WHERE session_id = ? ORDER BY id ASC", sessionID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to query messages for session %q: %w", sessionID, err)
 	}
@@ -182,8 +220,12 @@ func (d *DB) GetSession(sessionID string) (*Session, []Message, error) {
 	var msgs []Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &m.CreatedAt); err != nil {
+		var jsonPayload sql.NullString
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &jsonPayload, &m.CreatedAt); err != nil {
 			return nil, nil, err
+		}
+		if jsonPayload.Valid {
+			m.JSONPayload = jsonPayload.String
 		}
 		msgs = append(msgs, m)
 	}
@@ -200,6 +242,14 @@ func (d *DB) GetSessionGenAIContents(sessionID string) ([]*genai.Content, error)
 
 	var contents []*genai.Content
 	for _, m := range msgs {
+		if m.JSONPayload != "" {
+			var gc genai.Content
+			if unmarshalErr := json.Unmarshal([]byte(m.JSONPayload), &gc); unmarshalErr == nil {
+				contents = append(contents, &gc)
+				continue
+			}
+		}
+
 		role := m.Role
 		if role == "assistant" {
 			role = "model"

@@ -18,6 +18,21 @@ func DefaultTools() ([]tool.Tool, error) {
 		return nil, fmt.Errorf("failed to initialize fileTool: %w", err)
 	}
 
+	writeTool, err := WriteFileTool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize writeTool: %w", err)
+	}
+
+	editTool, err := EditFileTool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize editTool: %w", err)
+	}
+
+	execTool, err := ExecCommandTool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize execTool: %w", err)
+	}
+
 	searchTool, err := WebSearchTool()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize web_search tool: %w", err)
@@ -31,6 +46,9 @@ func DefaultTools() ([]tool.Tool, error) {
 	return []tool.Tool{
 		sysTool,
 		fileTool,
+		writeTool,
+		editTool,
+		execTool,
 		searchTool,
 		fetchTool,
 	}, nil
