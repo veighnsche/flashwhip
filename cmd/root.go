@@ -32,9 +32,9 @@ It connects to Ollama endpoints (or OpenAI-compatible hosts) to execute single-s
 		}
 
 		ctx := context.Background()
-		applyFlagsToConfig()
+		activeCfg := applyFlagsToConfig()
 
-		appAgent, err := agent.BuildAgent(ctx, cfg)
+		appAgent, err := agent.BuildAgent(ctx, activeCfg)
 		if err != nil {
 			return fmt.Errorf("failed to build agent: %w", err)
 		}
@@ -59,14 +59,16 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&flagAPIKey, "api-key", "k", cfg.APIKey, "Optional API key")
 }
 
-func applyFlagsToConfig() {
+func applyFlagsToConfig() *config.Config {
+	c := *cfg
 	if flagURL != "" {
-		cfg.BaseURL = flagURL
+		c.BaseURL = flagURL
 	}
 	if flagModel != "" {
-		cfg.ModelName = flagModel
+		c.ModelName = flagModel
 	}
 	if flagAPIKey != "" {
-		cfg.APIKey = flagAPIKey
+		c.APIKey = flagAPIKey
 	}
+	return &c
 }

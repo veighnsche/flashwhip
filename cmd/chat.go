@@ -16,14 +16,14 @@ var chatCmd = &cobra.Command{
 	Long:  `Launches an interactive multi-turn terminal conversation with persistent prompt history (~/.flashwhip_history).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		applyFlagsToConfig()
+		activeCfg := applyFlagsToConfig()
 
-		appAgent, err := agent.BuildAgent(ctx, cfg)
+		appAgent, err := agent.BuildAgent(ctx, activeCfg)
 		if err != nil {
 			return fmt.Errorf("failed to build agent: %w", err)
 		}
 
-		return ui.RunInteractiveREPL(ctx, appAgent, cfg)
+		return ui.RunInteractiveREPL(ctx, appAgent, activeCfg)
 	},
 }
 

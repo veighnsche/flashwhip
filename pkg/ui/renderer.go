@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/charmbracelet/glamour"
@@ -46,46 +45,10 @@ func RunSinglePrompt(ctx context.Context, appAgent agent.Agent, promptText strin
 	fmt.Printf("%s Processing prompt...\n\n", AssistantBadge.Render("[Flashwhip]"))
 
 	tracker := NewStreamTracker()
-
-	for ev, err := range r.Run(ctx, "user", sessionID, userMsg, agent.RunConfig{StreamingMode: agent.StreamingModeSSE}) {
-		if err != nil {
-			return fmt.Errorf("agent run error: %w", err)
-		}
-		if ev == nil {
-			continue
-		}
-
-		if ev.Content != nil {
-			for _, part := range ev.Content.Parts {
-				if ev.Partial {
-					if part.Text != "" {
-						if part.Thought {
-							tracker.TransitionToThinking()
-							fmt.Print(ThinkingBadge.Render(part.Text))
-						} else {
-							tracker.TransitionToOutputting()
-							fmt.Print(part.Text)
-						}
-						_ = os.Stdout.Sync()
-					}
-
-					if part.FunctionCall != nil {
-						tracker.TransitionToIdle()
-						fmt.Printf("\n%s %s(%v)\n", ToolCallBadge.Render("⚡ [Tool Executing]:"), part.FunctionCall.Name, part.FunctionCall.Args)
-						_ = os.Stdout.Sync()
-					}
-				}
-
-				if part.FunctionResponse != nil {
-					tracker.TransitionToIdle()
-					fmt.Printf("\n%s %s\n", ToolResultBadge.Render("✔ [Tool Result]:"), part.FunctionResponse.Name)
-					_ = os.Stdout.Sync()
-				}
-			}
-		}
+	if err := ExecuteStreamLoop(ctx, r, sessionID, userMsg, tracker); err != nil {
+		return fmt.Errorf("agent run error: %w", err)
 	}
 
-	tracker.TransitionToIdle()
 	fmt.Println()
 	return nil
 }

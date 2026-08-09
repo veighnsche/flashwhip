@@ -8,12 +8,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	golanghtml "golang.org/x/net/html"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	fnet "flashwhip/pkg/net"
 )
 
 type WebSearchInput struct {
@@ -40,9 +41,7 @@ func performWebSearch(_ agent.Context, in WebSearchInput) (WebSearchOutput, erro
 
 	searchURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
 
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-	}
+	client := fnet.DefaultHTTPClient()
 
 	req, err := http.NewRequest("POST", searchURL, strings.NewReader("q="+url.QueryEscape(query)))
 	if err != nil {

@@ -67,46 +67,10 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 		fmt.Printf("\n%s\n", AssistantBadge.Render("[Assistant]"))
 		tracker := NewStreamTracker()
 
-		for ev, err := range r.Run(ctx, "user", sessionID, userMsg, agent.RunConfig{StreamingMode: agent.StreamingModeSSE}) {
-			if err != nil {
-				fmt.Printf("\n\033[31m[Error]: %v\033[0m\n", err)
-				break
-			}
-			if ev == nil {
-				continue
-			}
-
-			if ev.Content != nil {
-				for _, part := range ev.Content.Parts {
-					if ev.Partial {
-						if part.Text != "" {
-							if part.Thought {
-								tracker.TransitionToThinking()
-								fmt.Print(ThinkingBadge.Render(part.Text))
-							} else {
-								tracker.TransitionToOutputting()
-								fmt.Print(part.Text)
-							}
-							_ = os.Stdout.Sync()
-						}
-
-						if part.FunctionCall != nil {
-							tracker.TransitionToIdle()
-							fmt.Printf("\n%s %s(%v)\n", ToolCallBadge.Render("⚡ [Tool Executing]:"), part.FunctionCall.Name, part.FunctionCall.Args)
-							_ = os.Stdout.Sync()
-						}
-					}
-
-					if part.FunctionResponse != nil {
-						tracker.TransitionToIdle()
-						fmt.Printf("\n%s %s\n", ToolResultBadge.Render("✔ [Tool Result]:"), part.FunctionResponse.Name)
-						_ = os.Stdout.Sync()
-					}
-				}
-			}
+		if err := ExecuteStreamLoop(ctx, r, sessionID, userMsg, tracker); err != nil {
+			fmt.Printf("\n\033[31m[Error]: %v\033[0m\n", err)
 		}
 
-		tracker.TransitionToIdle()
 		fmt.Println()
 	}
 

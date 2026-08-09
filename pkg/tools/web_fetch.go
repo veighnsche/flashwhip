@@ -8,7 +8,6 @@ import (
 	"net/http"
 	nurl "net/url"
 	"strings"
-	"time"
 
 	readability "codeberg.org/readeck/go-readability/v2"
 	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
@@ -16,6 +15,8 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	fnet "flashwhip/pkg/net"
 )
 
 type WebFetchInput struct {
@@ -52,9 +53,7 @@ func fetchWebPage(_ agent.Context, in WebFetchInput) (WebFetchOutput, error) {
 		return WebFetchOutput{}, fmt.Errorf("invalid URL %q: %w", rawURL, err)
 	}
 
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-	}
+	client := fnet.DefaultHTTPClient()
 
 	req, err := http.NewRequest("GET", parsedURL.String(), nil)
 	if err != nil {

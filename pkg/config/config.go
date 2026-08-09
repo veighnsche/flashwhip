@@ -14,9 +14,12 @@ type Config struct {
 }
 
 const (
-	DefaultBaseURL   = "https://ollama.dimensionlab.net/v1"
-	DefaultModelName = "hf.co/gbuzhf/KAT-Coder-V2.5-Dev-MTP-GGUF:UD-Q4_K_XL"
-	DefaultSystem    = "You are Flashwhip, an intelligent AI coding and terminal assistant powered by Google ADK 2.0. Provide concise, helpful, and technically accurate responses."
+	DefaultBaseURL     = "https://ollama.dimensionlab.net/v1"
+	DefaultModelName   = "hf.co/gbuzhf/KAT-Coder-V2.5-Dev-MTP-GGUF:UD-Q4_K_XL"
+	DefaultSystem      = "You are Flashwhip, an intelligent AI coding and terminal assistant powered by Google ADK 2.0. Provide concise, helpful, and technically accurate responses."
+	DefaultUserAgent   = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+	MaxContentLength   = 4000
+	MaxSearchResults   = 6
 )
 
 // LoadConfig creates a Config instance, pulling from environment variables with fallback defaults.
