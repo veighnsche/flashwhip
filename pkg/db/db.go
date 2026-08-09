@@ -101,8 +101,14 @@ func (d *DB) migrate() error {
 
 	CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
 	`
-	_, err := d.sqlDB.Exec(schema)
-	return err
+	if _, err := d.sqlDB.Exec(schema); err != nil {
+		return err
+	}
+
+	// Schema migration for pre-existing databases missing turn_count
+	_, _ = d.sqlDB.Exec("ALTER TABLE sessions ADD COLUMN turn_count INTEGER NOT NULL DEFAULT 0;")
+
+	return nil
 }
 
 // SaveMessage stores a text-only message (user or assistant) and updates the session's updated_at timestamp.
