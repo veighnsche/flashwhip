@@ -24,11 +24,15 @@ func BuildAgent(ctx context.Context, cfg *config.Config) (agent.Agent, error) {
 		return nil, fmt.Errorf("failed to load default tools: %w", err)
 	}
 
+	// Inject live project context (cwd, directory layout, coding rules) into the
+	// system instruction so the agent is immediately oriented to the project.
+	systemInstruction := cfg.SystemInstruction + config.BuildProjectContext(cfg.ProjectRoot)
+
 	a, err := llmagent.New(llmagent.Config{
 		Name:        "flashwhip_agent",
 		Model:       model,
 		Description: "Flashwhip AI Terminal Assistant powered by ADK 2.0 & Ollama.",
-		Instruction: cfg.SystemInstruction,
+		Instruction: systemInstruction,
 		Tools:       defaultTools,
 	})
 	if err != nil {
@@ -37,3 +41,4 @@ func BuildAgent(ctx context.Context, cfg *config.Config) (agent.Agent, error) {
 
 	return a, nil
 }
+

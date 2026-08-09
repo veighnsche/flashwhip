@@ -18,6 +18,7 @@ var (
 	flagURL    string
 	flagModel  string
 	flagAPIKey string
+	flagCwd    string
 )
 
 var rootCmd = &cobra.Command{
@@ -57,6 +58,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&flagURL, "url", "u", cfg.BaseURL, "Ollama / OpenAI endpoint URL")
 	rootCmd.PersistentFlags().StringVarP(&flagModel, "model", "m", cfg.ModelName, "Model name identifier")
 	rootCmd.PersistentFlags().StringVarP(&flagAPIKey, "api-key", "k", cfg.APIKey, "Optional API key")
+	rootCmd.PersistentFlags().StringVarP(&flagCwd, "cwd", "C", "", "Project root directory to operate in (defaults to current directory)")
 }
 
 func applyFlagsToConfig() *config.Config {
@@ -69,6 +71,9 @@ func applyFlagsToConfig() *config.Config {
 	}
 	if flagAPIKey != "" {
 		c.APIKey = flagAPIKey
+	}
+	if flagCwd != "" {
+		c.ProjectRoot = flagCwd
 	}
 	return &c
 }
