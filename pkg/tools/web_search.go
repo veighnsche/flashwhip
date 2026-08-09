@@ -3,13 +3,14 @@ package tools
 import (
 	"bytes"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"golang.org/x/net/html"
+	golanghtml "golang.org/x/net/html"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
@@ -26,8 +27,9 @@ type SearchResultItem struct {
 }
 
 type WebSearchOutput struct {
-	Query   string             `json:"query"`
-	Results []SearchResultItem `json:"results"`
+	Query         string             `json:"query"`
+	InstantAnswer string             `json:"instant_answer,omitempty"`
+	Results       []SearchResultItem `json:"results"`
 }
 
 func performWebSearch(_ agent.Context, in WebSearchInput) (WebSearchOutput, error) {
@@ -46,8 +48,10 @@ func performWebSearch(_ agent.Context, in WebSearchInput) (WebSearchOutput, erro
 	if err != nil {
 		return WebSearchOutput{}, fmt.Errorf("failed to create search request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -60,29 +64,43 @@ func performWebSearch(_ agent.Context, in WebSearchInput) (WebSearchOutput, erro
 		return WebSearchOutput{}, fmt.Errorf("failed to read search response body: %w", err)
 	}
 
-	results := parseDuckDuckGoHTML(bodyBytes)
+	instantAnswer, results := parseDuckDuckGoHTML(bodyBytes)
 	if len(results) > 6 {
 		results = results[:6]
 	}
 
 	return WebSearchOutput{
-		Query:   query,
-		Results: results,
+		Query:         query,
+		InstantAnswer: instantAnswer,
+		Results:       results,
 	}, nil
 }
 
-func parseDuckDuckGoHTML(htmlBytes []byte) []SearchResultItem {
-	doc, err := html.Parse(bytes.NewReader(htmlBytes))
+func parseDuckDuckGoHTML(htmlBytes []byte) (string, []SearchResultItem) {
+	doc, err := golanghtml.Parse(bytes.NewReader(htmlBytes))
 	if err != nil {
-		return nil
+		return "", nil
 	}
 
+	var instantAnswer string
 	var results []SearchResultItem
 	var currentTitle, currentURL, currentSnippet string
 
-	var traverse func(*html.Node)
-	traverse = func(n *html.Node) {
-		if n.Type == html.ElementNode {
+	var traverse func(*golanghtml.Node)
+	traverse = func(n *golanghtml.Node) {
+		if n.Type == golanghtml.ElementNode {
+			// Extract instant answer / zero-click box if present
+			if instantAnswer == "" {
+				for _, attr := range n.Attr {
+					if attr.Key == "class" && (strings.Contains(attr.Val, "zci") || strings.Contains(attr.Val, "zero-click") || strings.Contains(attr.Val, "module--weather") || strings.Contains(attr.Val, "msg-optional")) {
+						txt := cleanText(getNodeText(n))
+						if len(txt) > 10 {
+							instantAnswer = txt
+						}
+					}
+				}
+			}
+
 			// Find result title & link
 			if n.Data == "a" {
 				for _, attr := range n.Attr {
@@ -104,9 +122,9 @@ func parseDuckDuckGoHTML(htmlBytes []byte) []SearchResultItem {
 						currentSnippet = getNodeText(n)
 						if currentTitle != "" && currentURL != "" {
 							results = append(results, SearchResultItem{
-								Title:   strings.TrimSpace(currentTitle),
+								Title:   cleanText(currentTitle),
 								URL:     strings.TrimSpace(currentURL),
-								Snippet: strings.TrimSpace(currentSnippet),
+								Snippet: cleanText(currentSnippet),
 							})
 							currentTitle, currentURL, currentSnippet = "", "", ""
 						}
@@ -121,14 +139,21 @@ func parseDuckDuckGoHTML(htmlBytes []byte) []SearchResultItem {
 	}
 
 	traverse(doc)
-	return results
+	return instantAnswer, results
 }
 
-func getNodeText(n *html.Node) string {
+func cleanText(s string) string {
+	s = html.UnescapeString(s)
+	s = strings.ReplaceAll(s, "\u00a0", " ")
+	fields := strings.Fields(s)
+	return strings.Join(fields, " ")
+}
+
+func getNodeText(n *golanghtml.Node) string {
 	var sb strings.Builder
-	var extract func(*html.Node)
-	extract = func(node *html.Node) {
-		if node.Type == html.TextNode {
+	var extract func(*golanghtml.Node)
+	extract = func(node *golanghtml.Node) {
+		if node.Type == golanghtml.TextNode {
 			sb.WriteString(node.Data)
 		}
 		for c := node.FirstChild; c != nil; c = c.NextSibling {
@@ -155,6 +180,7 @@ func decodeDDGURL(raw string) string {
 func WebSearchTool() (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "web_search",
-		Description: "Searches the live web for a query and returns top matching results with titles, snippets, and URLs.",
+		Description: "Searches the live web for a query and returns top matching results, snippets, and instant answer cards (e.g. weather, calculations, definitions, facts). Use specific search terms to get direct answers in snippets.",
 	}, performWebSearch)
 }
+

@@ -16,7 +16,7 @@ import (
 	"flashwhip/pkg/config"
 )
 
-// RunInteractiveREPL starts an interactive terminal session with readline persistent history and styled UI.
+// RunInteractiveREPL starts an interactive terminal session with multi-stage thinking & tool loop tracking.
 func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.Config) error {
 	r, err := runner.NewInMemory("flashwhip", appAgent)
 	if err != nil {
@@ -65,10 +65,9 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 		}
 
 		fmt.Printf("\n%s\n", AssistantBadge.Render("[Assistant]"))
-		inReasoningMode := false
-		var finalContentAccumulator strings.Builder
+		tracker := NewStreamTracker()
 
-		for ev, err := range r.Run(ctx, "user", sessionID, userMsg, agent.RunConfig{}) {
+		for ev, err := range r.Run(ctx, "user", sessionID, userMsg, agent.RunConfig{StreamingMode: agent.StreamingModeSSE}) {
 			if err != nil {
 				fmt.Printf("\n\033[31m[Error]: %v\033[0m\n", err)
 				break
@@ -77,47 +76,37 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 				continue
 			}
 
-			if ev.CustomMetadata != nil {
-				if reasoningText, ok := ev.CustomMetadata["reasoning"].(string); ok && reasoningText != "" {
-					if !inReasoningMode {
-						fmt.Print(ThinkingBadge.Render("🧠 [Thinking]: "))
-						inReasoningMode = true
-					}
-					fmt.Print(ThinkingBadge.Render(reasoningText))
-				}
-			}
-
 			if ev.Content != nil {
-				if inReasoningMode {
-					fmt.Print("\n\n")
-					inReasoningMode = false
-				}
-
 				for _, part := range ev.Content.Parts {
-					if part.Text != "" {
-						if ev.Partial {
-							fmt.Print(part.Text)
+					if ev.Partial {
+						if part.Text != "" {
+							if part.Thought {
+								tracker.TransitionToThinking()
+								fmt.Print(ThinkingBadge.Render(part.Text))
+							} else {
+								tracker.TransitionToOutputting()
+								fmt.Print(part.Text)
+							}
+							_ = os.Stdout.Sync()
 						}
-						finalContentAccumulator.WriteString(part.Text)
+
+						if part.FunctionCall != nil {
+							tracker.TransitionToIdle()
+							fmt.Printf("\n%s %s(%v)\n", ToolCallBadge.Render("⚡ [Tool Executing]:"), part.FunctionCall.Name, part.FunctionCall.Args)
+							_ = os.Stdout.Sync()
+						}
 					}
-					if part.FunctionCall != nil {
-						fmt.Printf("\n%s %s(%v)\n", ToolCallBadge.Render("⚡ [Tool Call]:"), part.FunctionCall.Name, part.FunctionCall.Args)
+
+					if part.FunctionResponse != nil {
+						tracker.TransitionToIdle()
+						fmt.Printf("\n%s %s\n", ToolResultBadge.Render("✔ [Tool Result]:"), part.FunctionResponse.Name)
+						_ = os.Stdout.Sync()
 					}
 				}
 			}
 		}
 
-		if inReasoningMode {
-			fmt.Print("\n")
-		}
-
-		fullText := finalContentAccumulator.String()
-		if fullText != "" {
-			rendered := RenderMarkdown(fullText)
-			fmt.Print("\n--- [Rendered Output] ---\n")
-			fmt.Print(rendered)
-		}
-
+		tracker.TransitionToIdle()
 		fmt.Println()
 	}
 

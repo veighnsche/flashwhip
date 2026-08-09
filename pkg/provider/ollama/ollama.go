@@ -9,6 +9,8 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"os"
+	"sort"
 	"strings"
 
 	"google.golang.org/adk/v2/model"
@@ -20,6 +22,7 @@ type Model struct {
 	baseURL   string
 	apiKey    string
 	client    *http.Client
+	adapter   ModelAdapter
 }
 
 func NewModel(modelName, baseURL, apiKey string) (*Model, error) {
@@ -39,6 +42,7 @@ func NewModel(modelName, baseURL, apiKey string) (*Model, error) {
 		baseURL:   baseURL,
 		apiKey:    apiKey,
 		client:    &http.Client{},
+		adapter:   SelectAdapter(modelName),
 	}, nil
 }
 
@@ -46,21 +50,55 @@ func (m *Model) Name() string {
 	return m.modelName
 }
 
+type OpenAIFunction struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Parameters  any    `json:"parameters,omitempty"`
+}
+
+type OpenAITool struct {
+	Type     string         `json:"type"`
+	Function OpenAIFunction `json:"function"`
+}
+
+type OpenAIToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type OpenAIToolCall struct {
+	ID       string                 `json:"id,omitempty"`
+	Type     string                 `json:"type,omitempty"`
+	Function OpenAIToolCallFunction `json:"function"`
+}
+
 type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string           `json:"role"`
+	Content    string           `json:"content"`
+	ToolCalls  []OpenAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+	Name       string           `json:"name,omitempty"`
 }
 
 type ChatRequest struct {
 	Model    string        `json:"model"`
 	Messages []ChatMessage `json:"messages"`
+	Tools    []OpenAITool  `json:"tools,omitempty"`
 	Stream   bool          `json:"stream"`
 }
 
+type ChatStreamToolCallDelta struct {
+	Index    int                    `json:"index"`
+	ID       string                 `json:"id,omitempty"`
+	Type     string                 `json:"type,omitempty"`
+	Function OpenAIToolCallFunction `json:"function"`
+}
+
 type ChatStreamDelta struct {
-	Role      string `json:"role,omitempty"`
-	Content   string `json:"content,omitempty"`
-	Reasoning string `json:"reasoning,omitempty"`
+	Role      string                    `json:"role,omitempty"`
+	Content   string                    `json:"content,omitempty"`
+	Reasoning string                    `json:"reasoning,omitempty"`
+	ToolCalls []ChatStreamToolCallDelta `json:"tool_calls,omitempty"`
 }
 
 type ChatStreamChoice struct {
@@ -76,9 +114,10 @@ type ChatStreamResponse struct {
 }
 
 type ChatChoiceMessage struct {
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	Reasoning string `json:"reasoning"`
+	Role      string           `json:"role"`
+	Content   string           `json:"content"`
+	Reasoning string           `json:"reasoning"`
+	ToolCalls []OpenAIToolCall `json:"tool_calls"`
 }
 
 type ChatChoice struct {
@@ -93,50 +132,61 @@ type ChatResponse struct {
 	Choices []ChatChoice `json:"choices"`
 }
 
+func sanitizeUTF8(s string) string {
+	s = strings.ToValidUTF8(s, "")
+	return strings.Map(func(r rune) rune {
+		if r == 0 || (r < 32 && r != '\n' && r != '\r' && r != '\t') {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {
-		var messages []ChatMessage
-
-		if req.Config != nil && req.Config.SystemInstruction != nil {
-			var sysTexts []string
-			for _, p := range req.Config.SystemInstruction.Parts {
-				if p.Text != "" {
-					sysTexts = append(sysTexts, p.Text)
-				}
-			}
-			if len(sysTexts) > 0 {
-				messages = append(messages, ChatMessage{
-					Role:    "system",
-					Content: strings.Join(sysTexts, "\n"),
-				})
-			}
+		messages, err := m.adapter.BuildMessages(req)
+		if err != nil {
+			yield(nil, fmt.Errorf("failed to build messages: %w", err))
+			return
 		}
 
-		for _, c := range req.Contents {
-			role := c.Role
-			if role == "model" || role == "assistant" {
-				role = "assistant"
-			} else if role == "" || role == "user" {
-				role = "user"
-			}
-
-			var textParts []string
-			for _, p := range c.Parts {
-				if p.Text != "" {
-					textParts = append(textParts, p.Text)
+		// Convert ADK tools into OpenAI tool specifications
+		var openAITools []OpenAITool
+		if req.Config != nil && len(req.Config.Tools) > 0 {
+			for _, t := range req.Config.Tools {
+				if t == nil {
+					continue
 				}
-			}
-			if len(textParts) > 0 {
-				messages = append(messages, ChatMessage{
-					Role:    role,
-					Content: strings.Join(textParts, "\n"),
-				})
+				for _, decl := range t.FunctionDeclarations {
+					if decl == nil {
+						continue
+					}
+					params := decl.ParametersJsonSchema
+					if params == nil {
+						params = decl.Parameters
+					}
+					if params == nil {
+						params = map[string]any{
+							"type":       "object",
+							"properties": map[string]any{},
+						}
+					}
+					openAITools = append(openAITools, OpenAITool{
+						Type: "function",
+						Function: OpenAIFunction{
+							Name:        decl.Name,
+							Description: decl.Description,
+							Parameters:  params,
+						},
+					})
+				}
 			}
 		}
 
 		payload := ChatRequest{
 			Model:    m.modelName,
 			Messages: messages,
+			Tools:    openAITools,
 			Stream:   stream,
 		}
 
@@ -144,6 +194,10 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 		if err != nil {
 			yield(nil, fmt.Errorf("failed to marshal chat request: %w", err))
 			return
+		}
+
+		if os.Getenv("DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "\n[DEBUG Ollama Request Payload]: %s\n\n", string(bodyBytes))
 		}
 
 		url := m.baseURL + "/chat/completions"
@@ -182,27 +236,49 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 			}
 
 			msg := chatResp.Choices[0].Message
-			customMeta := map[string]any{}
+			var parts []*genai.Part
+
 			if msg.Reasoning != "" {
-				customMeta["reasoning"] = msg.Reasoning
+				parts = append(parts, &genai.Part{
+					Text:    msg.Reasoning,
+					Thought: true,
+				})
+			}
+
+			if msg.Content != "" {
+				parts = append(parts, &genai.Part{
+					Text:    msg.Content,
+					Thought: false,
+				})
+			}
+
+			for _, tc := range msg.ToolCalls {
+				var argsMap map[string]any
+				_ = json.Unmarshal([]byte(tc.Function.Arguments), &argsMap)
+				if argsMap == nil {
+					argsMap = map[string]any{}
+				}
+				parts = append(parts, &genai.Part{
+					FunctionCall: &genai.FunctionCall{
+						Name: tc.Function.Name,
+						Args: argsMap,
+					},
+				})
 			}
 
 			llmResp := &model.LLMResponse{
 				Content: &genai.Content{
-					Role: "model",
-					Parts: []*genai.Part{
-						{Text: msg.Content},
-					},
+					Role:  "model",
+					Parts: parts,
 				},
-				CustomMetadata: customMeta,
-				TurnComplete:   true,
+				TurnComplete: true,
 			}
 			yield(llmResp, nil)
 			return
 		}
 
 		reader := bufio.NewReader(resp.Body)
-		var fullText strings.Builder
+		state := NewStreamState()
 
 		for {
 			line, err := reader.ReadString('\n')
@@ -232,27 +308,12 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 
 				if len(streamChunk.Choices) > 0 {
 					delta := streamChunk.Choices[0].Delta
-
-					if delta.Reasoning != "" {
-						llmResp := &model.LLMResponse{
-							CustomMetadata: map[string]any{
-								"reasoning": delta.Reasoning,
-							},
-							Partial: true,
-						}
-						if !yield(llmResp, nil) {
-							return
-						}
-					}
-
-					if delta.Content != "" {
-						fullText.WriteString(delta.Content)
+					deltaParts := m.adapter.ProcessStreamDelta(delta, state)
+					for _, p := range deltaParts {
 						llmResp := &model.LLMResponse{
 							Content: &genai.Content{
-								Role: "model",
-								Parts: []*genai.Part{
-									{Text: delta.Content},
-								},
+								Role:  "model",
+								Parts: []*genai.Part{p},
 							},
 							Partial: true,
 						}
@@ -264,15 +325,86 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 			}
 		}
 
+		var turnParts []*genai.Part
+
+		if state.Reasoning.Len() > 0 {
+			turnParts = append(turnParts, &genai.Part{
+				Text:    state.Reasoning.String(),
+				Thought: true,
+			})
+		}
+
+		cleanContent, xmlToolParts := extractXMLToolCalls(state.Content.String())
+
+		if cleanContent != "" {
+			turnParts = append(turnParts, &genai.Part{
+				Text:    cleanContent,
+				Thought: false,
+			})
+		}
+
+		var indices []int
+		for idx := range state.ToolCalls {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
+
+		for _, idx := range indices {
+			b := state.ToolCalls[idx]
+			var argsMap map[string]any
+			argsStr := b.Args.String()
+			if argsStr != "" {
+				_ = json.Unmarshal([]byte(argsStr), &argsMap)
+			}
+			if argsMap == nil {
+				argsMap = map[string]any{}
+			}
+			toolPart := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: b.Name,
+					Args: argsMap,
+				},
+			}
+			turnParts = append(turnParts, toolPart)
+
+			// Yield the complete function call to the runner stream
+			llmResp := &model.LLMResponse{
+				Content: &genai.Content{
+					Role:  "model",
+					Parts: []*genai.Part{toolPart},
+				},
+				Partial: true,
+			}
+			if !yield(llmResp, nil) {
+				return
+			}
+		}
+
+		for _, toolPart := range xmlToolParts {
+			turnParts = append(turnParts, toolPart)
+
+			// Yield fallback XML tool call to the runner stream
+			llmResp := &model.LLMResponse{
+				Content: &genai.Content{
+					Role:  "model",
+					Parts: []*genai.Part{toolPart},
+				},
+				Partial: true,
+			}
+			if !yield(llmResp, nil) {
+				return
+			}
+		}
+
 		finalResp := &model.LLMResponse{
 			Content: &genai.Content{
-				Role: "model",
-				Parts: []*genai.Part{
-					{Text: fullText.String()},
-				},
+				Role:  "model",
+				Parts: turnParts,
 			},
 			TurnComplete: true,
 		}
 		yield(finalResp, nil)
 	}
 }
+
+
