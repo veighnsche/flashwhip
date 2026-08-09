@@ -43,6 +43,26 @@ func DefaultTools() ([]tool.Tool, error) {
 		return nil, fmt.Errorf("failed to initialize web_fetch tool: %w", err)
 	}
 
+	listDirTool, err := ListDirTool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize list_dir tool: %w", err)
+	}
+
+	fileSearchTool, err := FileSearchTool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize file_search tool: %w", err)
+	}
+
+	grepSearchTool, err := GrepSearchTool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize grep_search tool: %w", err)
+	}
+
+	gitDiffTool, err := GitDiffTool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize git_diff tool: %w", err)
+	}
+
 	return []tool.Tool{
 		sysTool,
 		fileTool,
@@ -51,6 +71,10 @@ func DefaultTools() ([]tool.Tool, error) {
 		execTool,
 		searchTool,
 		fetchTool,
+		listDirTool,
+		fileSearchTool,
+		grepSearchTool,
+		gitDiffTool,
 	}, nil
 }
 
