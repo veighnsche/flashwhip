@@ -48,8 +48,75 @@ func NewModel(modelName, baseURL, apiKey string) (*Model, error) {
 	}, nil
 }
 
+// Name returns the model name identifier.
 func (m *Model) Name() string {
 	return m.modelName
+}
+
+// FetchAvailableModels queries the target endpoint (e.g. GET baseURL/models) to list available models.
+func FetchAvailableModels(baseURL, apiKey string) ([]string, error) {
+	if baseURL == "" {
+		baseURL = "https://ollama.dimensionlab.net/v1"
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	modelsURL := baseURL + "/models"
+	client := fnet.DefaultHTTPClient()
+
+	req, err := http.NewRequest("GET", modelsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to model endpoint %q: %w", modelsURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var listResp ModelListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
+		return nil, fmt.Errorf("failed to decode models response: %w", err)
+	}
+
+	var modelNames []string
+	seen := make(map[string]bool)
+
+	for _, m := range listResp.Data {
+		name := m.ID
+		if name == "" {
+			name = m.Name
+		}
+		if name != "" && !seen[name] {
+			seen[name] = true
+			modelNames = append(modelNames, name)
+		}
+	}
+
+	for _, m := range listResp.Models {
+		name := m.ID
+		if name == "" {
+			name = m.Name
+		}
+		if name != "" && !seen[name] {
+			seen[name] = true
+			modelNames = append(modelNames, name)
+		}
+	}
+
+	if len(modelNames) == 0 {
+		return nil, fmt.Errorf("no models returned from endpoint")
+	}
+
+	return modelNames, nil
 }
 
 func sanitizeUTF8(s string) string {

@@ -53,3 +53,27 @@ func DefaultTools() ([]tool.Tool, error) {
 		fetchTool,
 	}, nil
 }
+
+type ToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// GetToolDescriptions returns metadata for all registered tools.
+func GetToolDescriptions() ([]ToolInfo, error) {
+	toolsList, err := DefaultTools()
+	if err != nil {
+		return nil, err
+	}
+
+	var descriptions []ToolInfo
+	for _, t := range toolsList {
+		if t != nil {
+			descriptions = append(descriptions, ToolInfo{
+				Name:        t.Name(),
+				Description: t.Description(),
+			})
+		}
+	}
+	return descriptions, nil
+}

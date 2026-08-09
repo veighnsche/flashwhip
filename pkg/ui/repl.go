@@ -15,6 +15,8 @@ import (
 
 	"flashwhip/pkg/config"
 	"flashwhip/pkg/db"
+	"flashwhip/pkg/provider/ollama"
+	"flashwhip/pkg/tools"
 )
 
 // RunInteractiveREPL launches an interactive multi-turn REPL prompt loop.
@@ -70,6 +72,18 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 			cmdName := strings.ToLower(parts[0])
 
 			switch cmdName {
+			case "/help":
+				fmt.Println()
+				fmt.Println(ThinkingBadge.Render("⚡ FLASHWHIP REPL COMMANDS:"))
+				fmt.Printf("  %-20s %s\n", InfoValue.Render("/help"), "Show this help menu")
+				fmt.Printf("  %-20s %s\n", InfoValue.Render("/sessions, /list"), "List stored conversation sessions")
+				fmt.Printf("  %-20s %s\n", InfoValue.Render("/load <session_id>"), "Load and resume a past conversation session")
+				fmt.Printf("  %-20s %s\n", InfoValue.Render("/model, /models"), "Query live available models from endpoint")
+				fmt.Printf("  %-20s %s\n", InfoValue.Render("/tools"), "List all active coding harness tools")
+				fmt.Printf("  %-20s %s\n", InfoValue.Render("/clear"), "Clear terminal screen")
+				fmt.Printf("  %-20s %s\n", InfoValue.Render("exit, quit"), "Exit interactive session")
+				fmt.Println()
+				continue
 			case "/sessions", "/list", "/history":
 				database, err := db.DefaultDB()
 				if err == nil {
@@ -104,6 +118,41 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 						fmt.Printf("%s %s\n\n", AssistantBadge.Render("[Assistant]:"), m.Content)
 					}
 				}
+				continue
+			case "/model", "/models":
+				fmt.Println()
+				fmt.Printf("%s Querying endpoint %s...\n", AssistantBadge.Render("[Flashwhip]"), InfoValue.Render(cfg.BaseURL))
+				modelsList, mErr := ollama.FetchAvailableModels(cfg.BaseURL, cfg.APIKey)
+				if mErr != nil {
+					fmt.Printf("\033[31m[Error]: Failed to fetch models: %v\033[0m\n\n", mErr)
+				} else {
+					fmt.Println(ThinkingBadge.Render("Available Endpoint Models:"))
+					for _, mName := range modelsList {
+						if mName == cfg.ModelName {
+							fmt.Printf("  • %s %s\n", InfoValue.Render(mName), ToolResultBadge.Render("(active)"))
+						} else {
+							fmt.Printf("  • %s\n", mName)
+						}
+					}
+					fmt.Println()
+				}
+				continue
+			case "/tools":
+				fmt.Println()
+				toolInfos, tErr := tools.GetToolDescriptions()
+				if tErr != nil {
+					fmt.Printf("\033[31m[Error]: Failed to inspect tools: %v\033[0m\n\n", tErr)
+				} else {
+					fmt.Println(ThinkingBadge.Render("Active Code Harness Tools:"))
+					for _, ti := range toolInfos {
+						fmt.Printf("  • %-20s %s\n", ToolCallBadge.Render(ti.Name), ti.Description)
+					}
+					fmt.Println()
+				}
+				continue
+			case "/clear":
+				fmt.Print("\033[H\033[2J")
+				fmt.Println(RenderBanner(cfg.ModelName, cfg.BaseURL))
 				continue
 			}
 		}

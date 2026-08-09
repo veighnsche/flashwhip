@@ -81,3 +81,17 @@ type ChatResponse struct {
 	Model   string       `json:"model"`
 	Choices []ChatChoice `json:"choices"`
 }
+
+type ModelInfo struct {
+	ID      string `json:"id"`
+	Name    string `json:"name,omitempty"`
+	Object  string `json:"object,omitempty"`
+	Created int64  `json:"created,omitempty"`
+	OwnedBy string `json:"owned_by,omitempty"`
+}
+
+type ModelListResponse struct {
+	Object string      `json:"object,omitempty"`
+	Data   []ModelInfo `json:"data,omitempty"`
+	Models []ModelInfo `json:"models,omitempty"`
+}
