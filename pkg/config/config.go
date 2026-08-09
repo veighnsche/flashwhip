@@ -11,6 +11,9 @@ type Config struct {
 	ModelName         string
 	APIKey            string
 	SystemInstruction string
+	// ProjectRoot is the working directory the agent operates in.
+	// Defaults to os.Getwd() at startup; overridable via --cwd flag.
+	ProjectRoot string
 }
 
 const (
@@ -60,10 +63,13 @@ func LoadConfig() *Config {
 		apiKey = "ollama"
 	}
 
+	cwd, _ := os.Getwd()
+
 	return &Config{
 		BaseURL:           baseURL,
 		ModelName:         modelName,
 		APIKey:            apiKey,
 		SystemInstruction: DefaultSystem,
+		ProjectRoot:       cwd,
 	}
 }
