@@ -5,27 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/charmbracelet/glamour"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/genai"
 )
-
-// RenderMarkdown converts a markdown string to stylized terminal ANSI output using glamour.
-func RenderMarkdown(rawText string) string {
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(100),
-	)
-	if err != nil {
-		return rawText
-	}
-	out, err := renderer.Render(rawText)
-	if err != nil {
-		return rawText
-	}
-	return out
-}
 
 // RunSinglePrompt executes a single prompt against the agent with multi-stage thinking & tool loop tracking.
 func RunSinglePrompt(ctx context.Context, appAgent agent.Agent, promptText string) error {
