@@ -1,0 +1,39 @@
+package agent
+
+import (
+	"context"
+	"fmt"
+
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+
+	"flashwhip/pkg/config"
+	"flashwhip/pkg/provider/ollama"
+	"flashwhip/pkg/tools"
+)
+
+// BuildAgent creates and initializes an ADK 2.0 LLM agent with the configured model backend and registered toolsets.
+func BuildAgent(ctx context.Context, cfg *config.Config) (agent.Agent, error) {
+	model, err := ollama.NewModel(cfg.ModelName, cfg.BaseURL, cfg.APIKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Ollama model provider (%s): %w", cfg.BaseURL, err)
+	}
+
+	defaultTools, err := tools.DefaultTools()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load default tools: %w", err)
+	}
+
+	a, err := llmagent.New(llmagent.Config{
+		Name:        "flashwhip_agent",
+		Model:       model,
+		Description: "Flashwhip AI Terminal Assistant powered by ADK 2.0 & Ollama.",
+		Instruction: cfg.SystemInstruction,
+		Tools:       defaultTools,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create llmagent: %w", err)
+	}
+
+	return a, nil
+}
