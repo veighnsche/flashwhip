@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,6 +13,7 @@ import (
 	"flashwhip/pkg/config"
 	"flashwhip/pkg/ui"
 )
+
 
 var (
 	cfg        *config.Config
@@ -75,7 +77,17 @@ func applyFlagsToConfig() *config.Config {
 		c.APIKey = flagAPIKey
 	}
 	if flagCwd != "" {
-		c.ProjectRoot = flagCwd
+		abs, err := filepath.Abs(flagCwd)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid --cwd path %q: %v\n", flagCwd, err)
+			os.Exit(1)
+		}
+		if err := os.Chdir(abs); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot change to directory %q: %v\n", abs, err)
+			os.Exit(1)
+		}
+		c.ProjectRoot = abs
 	}
 	return &c
 }
+

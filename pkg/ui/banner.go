@@ -7,12 +7,13 @@ import (
 )
 
 // RenderBanner outputs a stylized Lipgloss header card.
-func RenderBanner(modelName, baseURL string) string {
+func RenderBanner(modelName, baseURL, projectRoot string) string {
 	title := TitleStyle.Render("⚡ FLASHWHIP ADK 2.0 CLI")
 	modelInfo := fmt.Sprintf("%s %s", InfoLabel.Render("Model:"), InfoValue.Render(modelName))
 	endpointInfo := fmt.Sprintf("%s %s", InfoLabel.Render("Endpoint:"), InfoValue.Render(baseURL))
+	cwdInfo := fmt.Sprintf("%s %s", InfoLabel.Render("Directory:"), InfoValue.Render(projectRoot))
 	hint := lipgloss.NewStyle().Foreground(ThinkingColor).Render("Type 'exit', 'quit', or press Ctrl+C to exit.")
 
-	content := fmt.Sprintf("%s\n\n%s\n%s\n\n%s", title, modelInfo, endpointInfo, hint)
+	content := fmt.Sprintf("%s\n\n%s\n%s\n%s\n\n%s", title, modelInfo, endpointInfo, cwdInfo, hint)
 	return BannerStyle.Render(content)
 }

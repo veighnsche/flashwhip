@@ -25,7 +25,7 @@ import (
 
 // RunInteractiveREPL launches an interactive multi-turn REPL prompt loop.
 func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.Config, targetSessionID string, maxTurns int) error {
-	fmt.Print(RenderBanner(cfg.ModelName, cfg.BaseURL))
+	fmt.Print(RenderBanner(cfg.ModelName, cfg.BaseURL, cfg.ProjectRoot))
 	fmt.Println()
 
 	sessionID := targetSessionID
@@ -235,7 +235,7 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 				continue
 			case "/clear":
 				fmt.Print("\033[H\033[2J")
-				fmt.Println(RenderBanner(cfg.ModelName, cfg.BaseURL))
+				fmt.Println(RenderBanner(cfg.ModelName, cfg.BaseURL, cfg.ProjectRoot))
 				continue
 			}
 		}
