@@ -2,8 +2,10 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
@@ -12,9 +14,16 @@ import (
 	"flashwhip/pkg/db"
 )
 
+// ErrMaxTurnsReached is returned when the agent exceeds the configured turn limit.
+var ErrMaxTurnsReached = errors.New("max turns reached")
+
 // ExecuteStreamLoop runs the streaming event loop for a given prompt session and updates the UI stream tracker.
-func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, userMsg *genai.Content, tracker *StreamTracker) error {
+// Text tokens are buffered and rendered through glamour markdown at the end of each turn for clean output.
+// maxTurns limits the number of completed agent turns (tool-call round-trips); 0 means unlimited.
+func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, userMsg *genai.Content, tracker *StreamTracker, maxTurns int) error {
 	var assistantParts []*genai.Part
+	var textBuf strings.Builder
+	completedTurns := 0
 
 	for ev, err := range r.Run(ctx, "user", sessionID, userMsg, agent.RunConfig{StreamingMode: agent.StreamingModeSSE}) {
 		if err != nil {
@@ -24,19 +33,31 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 			continue
 		}
 
+		// Count completed agent turns for the MaxTurns guard.
+		if ev.TurnComplete {
+			completedTurns++
+			if maxTurns > 0 && completedTurns >= maxTurns {
+				fmt.Printf("\n%s Max turns (%d) reached. Use --max-turns to increase the limit.\n",
+					ToolCallBadge.Render("⚠ [Flashwhip]:"), maxTurns)
+				break
+			}
+		}
+
 		if ev.Content != nil {
 			for _, part := range ev.Content.Parts {
 				if ev.Partial {
 					if part.Text != "" {
 						if part.Thought {
+							// Thinking tokens: print immediately, no buffering.
 							tracker.TransitionToThinking()
 							fmt.Print(ThinkingBadge.Render(part.Text))
+							_ = os.Stdout.Sync()
 						} else {
+							// Regular text: buffer silently; will be glamour-rendered at end of turn.
 							tracker.TransitionToOutputting()
-							fmt.Print(part.Text)
+							textBuf.WriteString(part.Text)
 							assistantParts = append(assistantParts, part)
 						}
-						_ = os.Stdout.Sync()
 					}
 
 					if part.FunctionCall != nil {
@@ -58,7 +79,13 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 
 	tracker.TransitionToIdle()
 
-	// Persist to embedded SQLite database (structured GenAI Content trees)
+	// Render buffered text through glamour markdown now that the full response is assembled.
+	if textBuf.Len() > 0 {
+		fmt.Print(RenderMarkdown(textBuf.String()))
+		_ = os.Stdout.Sync()
+	}
+
+	// Persist to embedded SQLite database (structured GenAI Content trees).
 	database, dErr := db.DefaultDB()
 	if dErr == nil && database != nil {
 		if userMsg != nil {

@@ -25,7 +25,7 @@ var chatCmd = &cobra.Command{
 			return fmt.Errorf("failed to build agent: %w", err)
 		}
 
-		return ui.RunInteractiveREPL(ctx, appAgent, activeCfg, flagSession)
+		return ui.RunInteractiveREPL(ctx, appAgent, activeCfg, flagSession, flagMaxTurns)
 	},
 }
 

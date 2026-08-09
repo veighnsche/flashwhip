@@ -19,6 +19,7 @@ var (
 	flagModel  string
 	flagAPIKey string
 	flagCwd    string
+	flagMaxTurns int
 )
 
 var rootCmd = &cobra.Command{
@@ -41,7 +42,7 @@ It connects to Ollama endpoints (or OpenAI-compatible hosts) to execute single-s
 		}
 
 		prompt := strings.Join(args, " ")
-		return ui.RunSinglePrompt(ctx, appAgent, prompt)
+		return ui.RunSinglePrompt(ctx, appAgent, prompt, flagMaxTurns)
 	},
 }
 
@@ -59,6 +60,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&flagModel, "model", "m", cfg.ModelName, "Model name identifier")
 	rootCmd.PersistentFlags().StringVarP(&flagAPIKey, "api-key", "k", cfg.APIKey, "Optional API key")
 	rootCmd.PersistentFlags().StringVarP(&flagCwd, "cwd", "C", "", "Project root directory to operate in (defaults to current directory)")
+	rootCmd.PersistentFlags().IntVarP(&flagMaxTurns, "max-turns", "t", 25, "Maximum agent turns per prompt (tool-call round-trips); 0 = unlimited")
 }
 
 func applyFlagsToConfig() *config.Config {
