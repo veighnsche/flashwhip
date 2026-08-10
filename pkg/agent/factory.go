@@ -19,6 +19,10 @@ func BuildAgentWithModel(ctx context.Context, cfg *config.Config) (agent.Agent, 
 		return nil, nil, errors.Wrapf(errors.ErrCodeProviderInitFailed, err, "failed to initialize Ollama model provider (%s)", cfg.BaseURL)
 	}
 
+	if cfg != nil && cfg.ProjectRoot != "" {
+		config.SetProjectRoot(cfg.ProjectRoot)
+	}
+
 	defaultTools, err := tools.DefaultTools()
 	if err != nil {
 		return nil, nil, errors.Wrap(errors.ErrCodeToolInitFailed, "failed to load default tools", err)

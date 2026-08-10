@@ -11,7 +11,7 @@ import (
 )
 
 type ListDirInput struct {
-	DirPath string `json:"dir_path,omitempty" jsonschema:"Relative or absolute directory path to inspect (defaults to current directory '.')"`
+	DirPath string `json:"dir_path,omitempty" jsonschema:"Relative or absolute directory path to inspect (defaults to project root)"`
 }
 
 type DirEntryInfo struct {
@@ -27,10 +27,7 @@ type ListDirOutput struct {
 }
 
 func listDirectoryContents(_ agent.Context, in ListDirInput) (ListDirOutput, error) {
-	dirPath := in.DirPath
-	if dirPath == "" {
-		dirPath = "."
-	}
+	dirPath := resolveRepoDir(in.DirPath)
 
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {

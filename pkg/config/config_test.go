@@ -38,3 +38,14 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 		t.Errorf("cfg.APIKey = %q, want 'test-key'", cfg.APIKey)
 	}
 }
+
+func TestSetAndGetProjectRoot(t *testing.T) {
+	customDir := "/tmp/custom-project-root"
+	SetProjectRoot(customDir)
+
+	got := GetProjectRoot()
+	if got != customDir {
+		t.Errorf("GetProjectRoot() = %q, want %q", got, customDir)
+	}
+}
+

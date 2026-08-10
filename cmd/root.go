@@ -88,6 +88,7 @@ func applyFlagsToConfig() *config.Config {
 			os.Exit(1)
 		}
 		c.ProjectRoot = abs
+		config.SetProjectRoot(abs)
 	}
 	return &c
 }

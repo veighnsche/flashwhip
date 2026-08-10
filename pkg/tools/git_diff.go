@@ -13,7 +13,7 @@ import (
 )
 
 type GitDiffInput struct {
-	RepoDir string `json:"repo_dir,omitempty" jsonschema:"Optional path to the git repository root (defaults to current directory '.')"`
+	RepoDir string `json:"repo_dir,omitempty" jsonschema:"Optional path to the git repository root (defaults to project root)"`
 	Staged  bool   `json:"staged,omitempty" jsonschema:"If true, shows staged (cached) changes instead of unstaged working-tree changes"`
 }
 
@@ -25,10 +25,7 @@ type GitDiffOutput struct {
 }
 
 func gitDiff(_ agent.Context, in GitDiffInput) (GitDiffOutput, error) {
-	repoDir := strings.TrimSpace(in.RepoDir)
-	if repoDir == "" {
-		repoDir = "."
-	}
+	repoDir := resolveRepoDir(in.RepoDir)
 
 	args := []string{"diff"}
 	if in.Staged {

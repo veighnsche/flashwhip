@@ -2,6 +2,8 @@ package tools
 
 import (
 	"testing"
+
+	"flashwhip/pkg/config"
 )
 
 func TestGHIssueToolsInstantiation(t *testing.T) {
@@ -79,3 +81,26 @@ func TestGHIssueToolsInstantiation(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveRepoDir_DefaultsToProjectRoot(t *testing.T) {
+	customRoot := "/tmp/test-project-root"
+	config.SetProjectRoot(customRoot)
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{input: "", expected: customRoot},
+		{input: "  ", expected: customRoot},
+		{input: ".", expected: customRoot},
+		{input: "/custom/path", expected: "/custom/path"},
+	}
+
+	for _, tt := range tests {
+		got := resolveRepoDir(tt.input)
+		if got != tt.expected {
+			t.Errorf("resolveRepoDir(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+

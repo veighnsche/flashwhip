@@ -18,7 +18,7 @@ import (
 
 type GrepSearchInput struct {
 	Query       string `json:"query" jsonschema:"The text query string to search for"`
-	RootDir     string `json:"root_dir,omitempty" jsonschema:"Optional root directory to search in (defaults to '.')"`
+	RootDir     string `json:"root_dir,omitempty" jsonschema:"Optional root directory to search in (defaults to project root)"`
 	FilePattern string `json:"file_pattern,omitempty" jsonschema:"Optional filename pattern filter (e.g. '*.go')"`
 	IsRegex     bool   `json:"is_regex,omitempty" jsonschema:"If true, treat query as a regex pattern (default: false)"`
 }
@@ -41,10 +41,7 @@ func grepSearchCodebase(_ agent.Context, in GrepSearchInput) (GrepSearchOutput, 
 		return GrepSearchOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "query cannot be empty")
 	}
 
-	rootDir := in.RootDir
-	if rootDir == "" {
-		rootDir = "."
-	}
+	rootDir := resolveRepoDir(in.RootDir)
 
 	var re *regexp.Regexp
 	if in.IsRegex {

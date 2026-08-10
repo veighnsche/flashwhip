@@ -17,7 +17,7 @@ import (
 
 // GHPRListInput holds options for listing pull requests using `gh pr list`.
 type GHPRListInput struct {
-	RepoDir string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to '.')"`
+	RepoDir string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to project root)"`
 	State   string `json:"state,omitempty" jsonschema:"PR state filter: 'open' (default), 'closed', 'merged', or 'all'"`
 	Limit   int    `json:"limit,omitempty" jsonschema:"Maximum number of pull requests to fetch (default: 30)"`
 	Author  string `json:"author,omitempty" jsonschema:"Filter pull requests by author username"`
@@ -31,10 +31,7 @@ type GHPRListOutput struct {
 }
 
 func ghPRList(_ agent.Context, in GHPRListInput) (GHPRListOutput, error) {
-	repoDir := strings.TrimSpace(in.RepoDir)
-	if repoDir == "" {
-		repoDir = "."
-	}
+	repoDir := resolveRepoDir(in.RepoDir)
 
 	limit := in.Limit
 	if limit <= 0 {
@@ -93,7 +90,7 @@ func GHPRListTool() (tool.Tool, error) {
 
 // GHPRViewInput holds options for viewing pull request details using `gh pr view`.
 type GHPRViewInput struct {
-	RepoDir  string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to '.')"`
+	RepoDir  string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to project root)"`
 	PRNumber int    `json:"pr_number" jsonschema:"The pull request number to view"`
 	Comments bool   `json:"comments,omitempty" jsonschema:"If true, includes PR comments in the output"`
 }
@@ -110,10 +107,7 @@ func ghPRView(_ agent.Context, in GHPRViewInput) (GHPRViewOutput, error) {
 		return GHPRViewOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "pr_number must be greater than 0")
 	}
 
-	repoDir := strings.TrimSpace(in.RepoDir)
-	if repoDir == "" {
-		repoDir = "."
-	}
+	repoDir := resolveRepoDir(in.RepoDir)
 
 	args := []string{"pr", "view", strconv.Itoa(in.PRNumber)}
 	if in.Comments {
@@ -161,7 +155,7 @@ func GHPRViewTool() (tool.Tool, error) {
 
 // GHPRCreateInput holds options for creating a PR using `gh pr create`.
 type GHPRCreateInput struct {
-	RepoDir string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to '.')"`
+	RepoDir string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to project root)"`
 	Title   string `json:"title" jsonschema:"Title of the pull request"`
 	Body    string `json:"body" jsonschema:"Body description of the pull request"`
 	Base    string `json:"base,omitempty" jsonschema:"Target base branch for the pull request (e.g. 'main')"`
@@ -181,10 +175,7 @@ func ghPRCreate(_ agent.Context, in GHPRCreateInput) (GHPRCreateOutput, error) {
 		return GHPRCreateOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "title cannot be empty")
 	}
 
-	repoDir := strings.TrimSpace(in.RepoDir)
-	if repoDir == "" {
-		repoDir = "."
-	}
+	repoDir := resolveRepoDir(in.RepoDir)
 
 	args := []string{"pr", "create", "--title", title, "--body", strings.TrimSpace(in.Body)}
 
@@ -232,7 +223,7 @@ func GHPRCreateTool() (tool.Tool, error) {
 
 // GHPRCommentInput holds options for adding a comment to a PR using `gh pr comment`.
 type GHPRCommentInput struct {
-	RepoDir  string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to '.')"`
+	RepoDir  string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to project root)"`
 	PRNumber int    `json:"pr_number" jsonschema:"The pull request number to comment on"`
 	Body     string `json:"body" jsonschema:"Comment text body"`
 }
@@ -253,10 +244,7 @@ func ghPRComment(_ agent.Context, in GHPRCommentInput) (GHPRCommentOutput, error
 		return GHPRCommentOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "body cannot be empty")
 	}
 
-	repoDir := strings.TrimSpace(in.RepoDir)
-	if repoDir == "" {
-		repoDir = "."
-	}
+	repoDir := resolveRepoDir(in.RepoDir)
 
 	args := []string{"pr", "comment", strconv.Itoa(in.PRNumber), "--body", body}
 
@@ -295,7 +283,7 @@ func GHPRCommentTool() (tool.Tool, error) {
 
 // GHPRCloseInput holds options for closing a PR using `gh pr close`.
 type GHPRCloseInput struct {
-	RepoDir      string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to '.')"`
+	RepoDir      string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to project root)"`
 	PRNumber     int    `json:"pr_number" jsonschema:"The pull request number to close"`
 	DeleteBranch bool   `json:"delete_branch,omitempty" jsonschema:"If true, deletes the local and remote branch after closing"`
 }
@@ -312,10 +300,7 @@ func ghPRClose(_ agent.Context, in GHPRCloseInput) (GHPRCloseOutput, error) {
 		return GHPRCloseOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "pr_number must be greater than 0")
 	}
 
-	repoDir := strings.TrimSpace(in.RepoDir)
-	if repoDir == "" {
-		repoDir = "."
-	}
+	repoDir := resolveRepoDir(in.RepoDir)
 
 	args := []string{"pr", "close", strconv.Itoa(in.PRNumber)}
 	if in.DeleteBranch {
@@ -357,7 +342,7 @@ func GHPRCloseTool() (tool.Tool, error) {
 
 // GHPRMergeInput holds options for merging a PR using `gh pr merge`.
 type GHPRMergeInput struct {
-	RepoDir      string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to '.')"`
+	RepoDir      string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to project root)"`
 	PRNumber     int    `json:"pr_number" jsonschema:"The pull request number to merge"`
 	MergeMethod  string `json:"merge_method,omitempty" jsonschema:"Merge strategy: 'squash' (default), 'merge', or 'rebase'"`
 	DeleteBranch bool   `json:"delete_branch,omitempty" jsonschema:"If true, deletes the local and remote feature branch after merge"`
@@ -375,10 +360,7 @@ func ghPRMerge(_ agent.Context, in GHPRMergeInput) (GHPRMergeOutput, error) {
 		return GHPRMergeOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "pr_number must be greater than 0")
 	}
 
-	repoDir := strings.TrimSpace(in.RepoDir)
-	if repoDir == "" {
-		repoDir = "."
-	}
+	repoDir := resolveRepoDir(in.RepoDir)
 
 	args := []string{"pr", "merge", strconv.Itoa(in.PRNumber)}
 
@@ -431,7 +413,7 @@ func GHPRMergeTool() (tool.Tool, error) {
 
 // GHPRDiffInput holds options for viewing code diff of a PR using `gh pr diff`.
 type GHPRDiffInput struct {
-	RepoDir  string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to '.')"`
+	RepoDir  string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to project root)"`
 	PRNumber int    `json:"pr_number" jsonschema:"The pull request number to view diff for"`
 }
 
@@ -447,10 +429,7 @@ func ghPRDiff(_ agent.Context, in GHPRDiffInput) (GHPRDiffOutput, error) {
 		return GHPRDiffOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "pr_number must be greater than 0")
 	}
 
-	repoDir := strings.TrimSpace(in.RepoDir)
-	if repoDir == "" {
-		repoDir = "."
-	}
+	repoDir := resolveRepoDir(in.RepoDir)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -493,7 +472,7 @@ func GHPRDiffTool() (tool.Tool, error) {
 
 // GHPRChecksInput holds options for viewing status checks using `gh pr checks`.
 type GHPRChecksInput struct {
-	RepoDir  string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to '.')"`
+	RepoDir  string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to project root)"`
 	PRNumber int    `json:"pr_number" jsonschema:"The pull request number to view status checks for"`
 }
 
@@ -509,10 +488,7 @@ func ghPRChecks(_ agent.Context, in GHPRChecksInput) (GHPRChecksOutput, error) {
 		return GHPRChecksOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "pr_number must be greater than 0")
 	}
 
-	repoDir := strings.TrimSpace(in.RepoDir)
-	if repoDir == "" {
-		repoDir = "."
-	}
+	repoDir := resolveRepoDir(in.RepoDir)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

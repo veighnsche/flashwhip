@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strings"
+	"sync"
 )
 
 // Config holds runtime configuration for the ADK 2.0 CLI application.
@@ -66,6 +67,7 @@ func LoadConfig() *Config {
 	}
 
 	cwd, _ := os.Getwd()
+	SetProjectRoot(cwd)
 
 	return &Config{
 		BaseURL:           baseURL,
@@ -75,3 +77,36 @@ func LoadConfig() *Config {
 		ProjectRoot:       cwd,
 	}
 }
+
+var (
+	globalProjectRoot string
+	projectRootMu     sync.RWMutex
+)
+
+// SetProjectRoot updates the package-level active project root directory.
+func SetProjectRoot(dir string) {
+	dir = strings.TrimSpace(dir)
+	if dir != "" {
+		projectRootMu.Lock()
+		globalProjectRoot = dir
+		projectRootMu.Unlock()
+	}
+}
+
+// GetProjectRoot returns the active project root directory, falling back to os.Getwd() or ".".
+func GetProjectRoot() string {
+	projectRootMu.RLock()
+	root := globalProjectRoot
+	projectRootMu.RUnlock()
+
+	if root != "" {
+		return root
+	}
+
+	cwd, err := os.Getwd()
+	if err == nil && cwd != "" {
+		return cwd
+	}
+	return "."
+}
+

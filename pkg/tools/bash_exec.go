@@ -60,9 +60,7 @@ func executeShellCommand(_ agent.Context, in ExecCommandInput) (ExecCommandOutpu
 
 	startTime := time.Now()
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
-	if strings.TrimSpace(in.Cwd) != "" {
-		cmd.Dir = strings.TrimSpace(in.Cwd)
-	}
+	cmd.Dir = resolveRepoDir(in.Cwd)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf

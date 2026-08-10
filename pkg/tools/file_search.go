@@ -14,7 +14,7 @@ import (
 
 type FileSearchInput struct {
 	Pattern string `json:"pattern" jsonschema:"The glob filename pattern to match (e.g. '*.go', '*.json')"`
-	RootDir string `json:"root_dir,omitempty" jsonschema:"Optional root directory to search in (defaults to '.')"`
+	RootDir string `json:"root_dir,omitempty" jsonschema:"Optional root directory to search in (defaults to project root)"`
 }
 
 type FileSearchOutput struct {
@@ -29,10 +29,7 @@ func searchFiles(_ agent.Context, in FileSearchInput) (FileSearchOutput, error) 
 		return FileSearchOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "pattern cannot be empty")
 	}
 
-	rootDir := in.RootDir
-	if rootDir == "" {
-		rootDir = "."
-	}
+	rootDir := resolveRepoDir(in.RootDir)
 
 	var matches []string
 	err := filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, wErr error) error {
