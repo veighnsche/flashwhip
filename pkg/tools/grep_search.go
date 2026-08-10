@@ -89,6 +89,9 @@ func grepSearchCodebase(_ agent.Context, in GrepSearchInput) (GrepSearchOutput, 
 			}
 			lineNum++
 		}
+		if err := scanner.Err(); err != nil {
+			return nil
+		}
 		return nil
 	})
 

@@ -153,10 +153,7 @@ func FetchModelContextLength(baseURL, apiKey, modelName string) (int, error) {
 	baseURL = strings.TrimRight(baseURL, "/")
 
 	// Strip trailing /v1 to reach Ollama native API root
-	hostURL := baseURL
-	if strings.HasSuffix(hostURL, "/v1") {
-		hostURL = strings.TrimSuffix(hostURL, "/v1")
-	}
+	hostURL := strings.TrimSuffix(baseURL, "/v1")
 
 	showURL := hostURL + "/api/show"
 	client := fnet.DefaultHTTPClient()
