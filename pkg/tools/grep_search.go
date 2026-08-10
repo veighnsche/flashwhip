@@ -2,9 +2,11 @@ package tools
 
 import (
 	"bufio"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"google.golang.org/adk/v2/agent"
@@ -18,6 +20,7 @@ type GrepSearchInput struct {
 	Query       string `json:"query" jsonschema:"The text query string to search for"`
 	RootDir     string `json:"root_dir,omitempty" jsonschema:"Optional root directory to search in (defaults to '.')"`
 	FilePattern string `json:"file_pattern,omitempty" jsonschema:"Optional filename pattern filter (e.g. '*.go')"`
+	IsRegex     bool   `json:"is_regex,omitempty" jsonschema:"If true, treat query as a regex pattern (default: false)"`
 }
 
 type GrepMatch struct {
@@ -41,6 +44,15 @@ func grepSearchCodebase(_ agent.Context, in GrepSearchInput) (GrepSearchOutput, 
 	rootDir := in.RootDir
 	if rootDir == "" {
 		rootDir = "."
+	}
+
+	var re *regexp.Regexp
+	if in.IsRegex {
+		var compileErr error
+		re, compileErr = regexp.Compile(query)
+		if compileErr != nil {
+			return GrepSearchOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, fmt.Sprintf("invalid regex pattern: %v", compileErr))
+		}
 	}
 
 	var matches []GrepMatch
@@ -78,7 +90,13 @@ func grepSearchCodebase(_ agent.Context, in GrepSearchInput) (GrepSearchOutput, 
 		lineNum := 1
 		for scanner.Scan() {
 			line := scanner.Text()
-			if strings.Contains(line, query) {
+			match := false
+			if re != nil {
+				match = re.MatchString(line)
+			} else {
+				match = strings.Contains(line, query)
+			}
+			if match {
 				matches = append(matches, GrepMatch{
 					FilePath:   path,
 					LineNumber: lineNum,
