@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/chzyer/readline"
 	"google.golang.org/adk/v2/agent"
@@ -456,6 +457,32 @@ func DefaultRegistry() *CommandRegistry {
 		Handler: func(ctx *CommandContext, args []string) (CommandResult, error) {
 			fmt.Print("\033[H\033[2J")
 			fmt.Println(RenderBanner(ctx.Config.ModelName, ctx.Config.BaseURL, ctx.Config.ProjectRoot))
+			return CommandResult{}, nil
+		},
+	})
+
+	reg.Register(Command{
+		Name:        "/new",
+		Description: "Create a new session (fresh chat)",
+		Handler: func(ctx *CommandContext, args []string) (CommandResult, error) {
+			newSessionID := fmt.Sprintf("chat-%d", time.Now().Unix())
+			if ctx.SessionID != nil {
+				*ctx.SessionID = newSessionID
+			}
+			fmt.Printf("✅ [New Session]: %s\n", newSessionID)
+			return CommandResult{}, nil
+		},
+	})
+
+	reg.Register(Command{
+		Name:        "/reset",
+		Description: "Reset to a fresh session (same as /new)",
+		Handler: func(ctx *CommandContext, args []string) (CommandResult, error) {
+			newSessionID := fmt.Sprintf("chat-%d", time.Now().Unix())
+			if ctx.SessionID != nil {
+				*ctx.SessionID = newSessionID
+			}
+			fmt.Printf("✅ [Reset Session]: %s\n", newSessionID)
 			return CommandResult{}, nil
 		},
 	})

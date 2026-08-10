@@ -114,3 +114,49 @@ func TestCommandRegistry_TokensCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandRegistry_NewCommand(t *testing.T) {
+	reg := DefaultRegistry()
+	sessionID := "chat-1234567890"
+	cmdCtx := &CommandContext{
+		Ctx:       context.Background(),
+		SessionID: &sessionID,
+	}
+
+	res := reg.Dispatch("/new", cmdCtx)
+	if !res.Handled {
+		t.Errorf("Expected /new to be handled")
+	}
+	if res.Error != nil {
+		t.Errorf("Unexpected error dispatching /new: %v", res.Error)
+	}
+	if *cmdCtx.SessionID == "chat-1234567890" {
+		t.Errorf("Expected session ID to be updated after /new")
+	}
+	if !strings.HasPrefix(*cmdCtx.SessionID, "chat-") {
+		t.Errorf("Expected new session ID to start with 'chat-'")
+	}
+}
+
+func TestCommandRegistry_ResetCommand(t *testing.T) {
+	reg := DefaultRegistry()
+	sessionID := "chat-1234567890"
+	cmdCtx := &CommandContext{
+		Ctx:       context.Background(),
+		SessionID: &sessionID,
+	}
+
+	res := reg.Dispatch("/reset", cmdCtx)
+	if !res.Handled {
+		t.Errorf("Expected /reset to be handled")
+	}
+	if res.Error != nil {
+		t.Errorf("Unexpected error dispatching /reset: %v", res.Error)
+	}
+	if *cmdCtx.SessionID == "chat-1234567890" {
+		t.Errorf("Expected session ID to be updated after /reset")
+	}
+	if !strings.HasPrefix(*cmdCtx.SessionID, "chat-") {
+		t.Errorf("Expected new session ID to start with 'chat-'")
+	}
+}
