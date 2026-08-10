@@ -350,8 +350,3 @@ func extractXMLToolCalls(content string) (string, []*genai.Part) {
 type QwenDeepSeekAdapter struct {
 	OpenAIStandardAdapter
 }
-
-func (a *QwenDeepSeekAdapter) ProcessStreamDelta(delta ChatStreamDelta, state *StreamState) []*genai.Part {
-	parts := a.OpenAIStandardAdapter.ProcessStreamDelta(delta, state)
-	return parts
-}

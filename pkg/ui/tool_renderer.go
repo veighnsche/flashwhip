@@ -178,7 +178,7 @@ func formatActionAndOutcome(name string, args map[string]any, response map[strin
 	case "grep_search":
 		query := getArgOrRespString(args, response, "query", "pattern")
 		action := fmt.Sprintf("Searched: %s", ToolNameStyle.Render(fmt.Sprintf("%q", query)))
-		if matches, ok := response["total_lines"]; ok {
+		if matches, ok := response["total_matches"]; ok {
 			return fmt.Sprintf("%s (%s)", action, ToolMutedStyle.Render(fmt.Sprintf("%v matches", matches)))
 		}
 		return action
@@ -186,7 +186,7 @@ func formatActionAndOutcome(name string, args map[string]any, response map[strin
 	case "file_search":
 		pattern := getArgOrRespString(args, response, "pattern", "query")
 		action := fmt.Sprintf("Searched files: %s", ToolNameStyle.Render(fmt.Sprintf("%q", pattern)))
-		if count, ok := response["total_files"]; ok {
+		if count, ok := response["count"]; ok {
 			return fmt.Sprintf("%s (%s)", action, ToolMutedStyle.Render(fmt.Sprintf("%v files", count)))
 		}
 		return action

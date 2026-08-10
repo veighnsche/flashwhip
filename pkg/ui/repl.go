@@ -245,10 +245,6 @@ func pruneSessionInMemory(ctx context.Context, sessionSvc session.Service, sessi
 	}
 
 	if pct >= 75.0 {
-		newPct := 0.0
-		if tracker != nil {
-			newPct, _, _ = tracker.ContextSaturationPct()
-		}
-		fmt.Printf("\n%s Context saturation (%.1f%% -> %.1f%%) reached threshold — Auto-compacted history.\n", ToolResultBadge.Render("⚡ [Auto-Compacted Context]:"), pct, newPct)
+		fmt.Printf("\n%s Context saturation (%.1f%%) reached threshold — Auto-compacted history.\n", ToolResultBadge.Render("⚡ [Auto-Compacted Context]:"), pct)
 	}
 }

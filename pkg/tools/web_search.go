@@ -14,6 +14,7 @@ import (
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
 
+	"flashwhip/pkg/config"
 	"flashwhip/pkg/errors"
 	fnet "flashwhip/pkg/net"
 )
@@ -48,7 +49,7 @@ func performWebSearch(_ agent.Context, in WebSearchInput) (WebSearchOutput, erro
 	if err != nil {
 		return WebSearchOutput{}, errors.Wrap(errors.ErrCodeToolNetworkError, "failed to create search request", err)
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", config.DefaultUserAgent)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
