@@ -94,7 +94,7 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 		}
 
 		fmt.Printf("\n%s\n", AssistantBadge.Render("[Assistant]"))
-		tracker := NewStreamTracker()
+		tracker := NewStreamTrackerWithConfig(sessionID, cfg)
 
 		if err := ExecuteStreamLoop(ctx, r, sessionID, userMsg, tracker, maxTurns); err != nil {
 			fmt.Printf("\n\033[31m[Error]: %v\033[0m\n", err)
