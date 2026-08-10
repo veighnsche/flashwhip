@@ -3,8 +3,11 @@ package db
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"google.golang.org/genai"
 )
 
 func TestSQLiteDB(t *testing.T) {
@@ -81,6 +84,78 @@ func TestSQLiteDB(t *testing.T) {
 	}
 }
 
+func TestSessionTitleFromFirstUserMessage(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := OpenDB(filepath.Join(tempDir, "title.db"))
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer database.Close()
+
+	sid := "test-title-session"
+
+	// First saved content is an assistant tool call with no text parts. The session
+	// title must remain deferred (empty) rather than degrading to "[model message]".
+	toolCall := &genai.Content{
+		Role: "assistant",
+		Parts: []*genai.Part{
+			{FunctionCall: &genai.FunctionCall{Name: "read_file", Args: map[string]any{"path": "x"}}},
+		},
+	}
+	if err := database.SaveContent(sid, toolCall); err != nil {
+		t.Fatalf("SaveContent tool call failed: %v", err)
+	}
+
+	sess, _, err := database.GetSession(sid)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if sess.Title != "" {
+		t.Errorf("title after tool call = %q, want empty (deferred)", sess.Title)
+	}
+
+	// First user message with real text becomes the session title.
+	wantTitle := "Hello world from the user"
+	if err := database.SaveMessage(sid, "user", wantTitle); err != nil {
+		t.Fatalf("SaveMessage user failed: %v", err)
+	}
+	sess, _, err = database.GetSession(sid)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if sess.Title != wantTitle {
+		t.Errorf("title after user message = %q, want %q", sess.Title, wantTitle)
+	}
+}
+
+func TestSessionTitleTruncatedTo60Runes(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := OpenDB(filepath.Join(tempDir, "title_trunc.db"))
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer database.Close()
+
+	sid := "test-title-trunc"
+	long := strings.Repeat("界", 100) // 100 multibyte runes
+	if err := database.SaveMessage(sid, "user", long); err != nil {
+		t.Fatalf("SaveMessage failed: %v", err)
+	}
+
+	sess, _, err := database.GetSession(sid)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	got := []rune(sess.Title)
+	if len(got) != 63 { // 60 runes + "..."
+		t.Fatalf("truncated title rune length = %d, want 63 (got %q)", len(got), sess.Title)
+	}
+	// Must not contain a split rune; verify the suffix is the ellipsis.
+	if !strings.HasSuffix(sess.Title, "...") {
+		t.Errorf("title = %q, want suffix ellipsis", sess.Title)
+	}
+}
+
 func TestReplaceSessionGenAIContents(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test_replace.db")
@@ -118,4 +193,3 @@ func TestReplaceSessionGenAIContents(t *testing.T) {
 		t.Fatalf("Expected 1 content item after replace, got %d", len(newContents))
 	}
 }
-

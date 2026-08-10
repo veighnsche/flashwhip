@@ -26,12 +26,12 @@ type Session struct {
 }
 
 type Message struct {
-	ID          int64          `json:"id"`
-	SessionID   string         `json:"session_id"`
-	Role        string         `json:"role"`
-	Content     string         `json:"content"`
-	JSONPayload string         `json:"json_payload,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
+	ID          int64     `json:"id"`
+	SessionID   string    `json:"session_id"`
+	Role        string    `json:"role"`
+	Content     string    `json:"content"`
+	JSONPayload string    `json:"json_payload,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type DB struct {
@@ -160,9 +160,13 @@ func (d *DB) SaveContent(sessionID string, content *genai.Content) error {
 	}
 
 	if !exists {
-		title := textSummary
-		if len(title) > 60 {
-			title = title[:60] + "..."
+		// Defer title assignment: only the first user message with real text becomes
+		// the session title. Tool-call/model messages (which have no user text) get an
+		// empty title that is backfilled on the first user message instead of a useless
+		// "[model message]" placeholder.
+		title := ""
+		if content.Role == "user" && textSummary != "" {
+			title = truncateTitle(textSummary)
 		}
 		turnIncrement := 0
 		if content.Role == "assistant" || content.Role == "model" {
@@ -176,7 +180,13 @@ func (d *DB) SaveContent(sessionID string, content *genai.Content) error {
 		if content.Role == "assistant" || content.Role == "model" {
 			_, err = d.sqlDB.Exec("UPDATE sessions SET updated_at = ?, turn_count = turn_count + 1 WHERE id = ?", now, sessionID)
 		} else {
-			_, err = d.sqlDB.Exec("UPDATE sessions SET updated_at = ? WHERE id = ?", now, sessionID)
+			// Backfill a deferred/placeholder title on the first user message with real text.
+			if textSummary != "" {
+				_, err = d.sqlDB.Exec("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ? AND (title = '' OR title LIKE '[% message]')", truncateTitle(textSummary), now, sessionID)
+			}
+			if err == nil {
+				_, err = d.sqlDB.Exec("UPDATE sessions SET updated_at = ? WHERE id = ?", now, sessionID)
+			}
 		}
 		if err != nil {
 			return errors.Wrapf(errors.ErrCodeDBSaveFailed, err, "failed to update session timestamp for %q", sessionID)
@@ -189,6 +199,17 @@ func (d *DB) SaveContent(sessionID string, content *genai.Content) error {
 	}
 
 	return nil
+}
+
+// truncateTitle shortens a session title to at most 60 runes (rune-safe, avoiding
+// splitting a UTF-8 rune in half), appending an ellipsis when truncated.
+func truncateTitle(s string) string {
+	const maxRunes = 60
+	r := []rune(s)
+	if len(r) <= maxRunes {
+		return s
+	}
+	return string(r[:maxRunes]) + "..."
 }
 
 // SaveMessage stores a text-only message (user or assistant) and updates the session's updated_at timestamp.

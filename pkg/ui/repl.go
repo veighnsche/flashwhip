@@ -2,10 +2,13 @@ package ui
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chzyer/readline"
@@ -66,6 +69,28 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 
 	cmdRegistry := DefaultRegistry()
 
+	// Graceful SIGINT (Ctrl+C) handling. readline drives the terminal in raw mode
+	// while a line is being typed, so SIGINT only reaches us while the terminal is
+	// in cooked mode — i.e. during streamed response generation or tool execution.
+	// In that window we cancel the active turn so the loop returns cleanly to the
+	// prompt instead of garbling the terminal or leaving orphans behind.
+	var activeCancel context.CancelFunc
+	var cancelMu sync.Mutex
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+	defer signal.Stop(sigChan)
+	go func() {
+		for range sigChan {
+			fmt.Printf("\n\n%s\n", ToolResultBadge.Render("⏹ Interrupted. Cleaning up..."))
+			cancelMu.Lock()
+			c := activeCancel
+			cancelMu.Unlock()
+			if c != nil {
+				c()
+			}
+		}
+	}()
+
 	for {
 		line, err := rl.Readline()
 		if err != nil {
@@ -111,8 +136,28 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 		}
 		tracker := NewStreamTrackerWithConfig(sessionID, cfg, usageTracker)
 
-		if err := ExecuteStreamLoop(ctx, r, sessionID, userMsg, tracker, maxTurns); err != nil {
-			fmt.Printf("\n\033[31m[Error]: %v\033[0m\n", err)
+		// Per-turn cancelable context so a SIGINT mid-turn can stop the stream loop
+		// and return control to the prompt without corrupting session state.
+		streamCtx, streamCancel := context.WithCancel(ctx)
+		cancelMu.Lock()
+		activeCancel = streamCancel
+		cancelMu.Unlock()
+
+		runErr := ExecuteStreamLoop(streamCtx, r, sessionID, userMsg, tracker, maxTurns)
+
+		cancelMu.Lock()
+		activeCancel = nil
+		cancelMu.Unlock()
+		streamCancel()
+
+		if runErr != nil {
+			// A cancelled context is the normal outcome of a user interrupt; we've
+			// already printed the "Interrupted" notice, so skip the red error line.
+			if stdErrors.Is(runErr, context.Canceled) {
+				fmt.Println()
+			} else {
+				fmt.Printf("\n\033[31m[Error]: %v\033[0m\n", runErr)
+			}
 		}
 
 		// Auto-prune: adaptively compact in-memory session history when history is long
