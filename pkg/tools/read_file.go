@@ -2,8 +2,10 @@ package tools
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
@@ -12,6 +14,18 @@ import (
 	"flashwhip/pkg/config"
 	"flashwhip/pkg/errors"
 )
+
+// truncateUTF8 safely truncates string s to at most maxBytes without splitting UTF-8 multi-byte runes.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	b := []byte(s[:maxBytes])
+	for len(b) > 0 && !utf8.Valid(b) {
+		b = b[:len(b)-1]
+	}
+	return string(b)
+}
 
 type ReadFileArgs struct {
 	FilePath  string `json:"file_path" jsonschema:"The local file path to read"`
@@ -73,13 +87,42 @@ func readFileSnippet(_ agent.Context, args ReadFileArgs) (ReadFileOutput, error)
 		}, nil
 	}
 
-	selectedLines := allLines[start-1 : end]
-	content := strings.Join(selectedLines, "\n")
+	startIdx := start - 1
+	endIdx := end
 
+	var selectedLines []string
+	currentBytes := 0
+	actualEndLine := start - 1
 	truncated := false
-	if len(content) > config.MaxFileReadBytes {
-		content = content[:config.MaxFileReadBytes] + "\n... [content truncated — use start_line/end_line to paginate]"
-		truncated = true
+
+	for i := startIdx; i < endIdx; i++ {
+		line := allLines[i]
+		lineBytes := len(line)
+		needed := lineBytes
+		if len(selectedLines) > 0 {
+			needed++ // newline delimiter
+		}
+
+		if currentBytes+needed > config.MaxFileReadBytes {
+			if len(selectedLines) == 0 {
+				// If even the first line exceeds MaxFileReadBytes, truncate safely at UTF-8 boundary
+				truncatedLine := truncateUTF8(line, config.MaxFileReadBytes)
+				selectedLines = append(selectedLines, truncatedLine)
+				currentBytes = len(truncatedLine)
+				actualEndLine = i + 1
+			}
+			truncated = true
+			break
+		}
+
+		selectedLines = append(selectedLines, line)
+		currentBytes += needed
+		actualEndLine = i + 1
+	}
+
+	content := strings.Join(selectedLines, "\n")
+	if truncated {
+		content += fmt.Sprintf("\n... [content truncated at line %d of %d — use start_line=%d to paginate]", actualEndLine, totalLines, actualEndLine+1)
 	}
 
 	return ReadFileOutput{
@@ -88,7 +131,7 @@ func readFileSnippet(_ agent.Context, args ReadFileArgs) (ReadFileOutput, error)
 		Bytes:      len(content),
 		TotalLines: totalLines,
 		StartLine:  start,
-		EndLine:    end,
+		EndLine:    actualEndLine,
 		Truncated:  truncated,
 	}, nil
 }
