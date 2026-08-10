@@ -35,11 +35,12 @@ type StreamOptions struct {
 }
 
 type ChatRequest struct {
-	Model     string        `json:"model"`
-	Messages  []ChatMessage `json:"messages"`
-	Tools     []OpenAITool  `json:"tools,omitempty"`
-	Stream    bool          `json:"stream"`
+	Model     string         `json:"model"`
+	Messages  []ChatMessage  `json:"messages"`
+	Tools     []OpenAITool   `json:"tools,omitempty"`
+	Stream    bool           `json:"stream"`
 	StreamOps *StreamOptions `json:"stream_options,omitempty"`
+	Options   map[string]any `json:"options,omitempty"`
 }
 
 // UsageChunk holds token counts from Ollama usage response chunks.

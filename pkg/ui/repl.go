@@ -15,14 +15,22 @@ import (
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 
+	fagent "flashwhip/pkg/agent"
 	"flashwhip/pkg/agent/middleware"
 	"flashwhip/pkg/config"
+	ollama "flashwhip/pkg/provider/ollama"
 )
 
 // RunInteractiveREPL launches an interactive multi-turn REPL prompt loop.
 func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.Config, targetSessionID string, maxTurns int) error {
 	fmt.Print(RenderBanner(cfg.ModelName, cfg.BaseURL, cfg.ProjectRoot))
 	fmt.Println()
+
+	var activeModel *ollama.Model
+	if newAgent, modelPtr, aErr := fagent.BuildAgentWithModel(ctx, cfg); aErr == nil {
+		appAgent = newAgent
+		activeModel = modelPtr
+	}
 
 	sessionID := targetSessionID
 	if sessionID == "" {
@@ -69,13 +77,14 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 		}
 
 		cmdCtx := &CommandContext{
-			Ctx:        ctx,
-			Config:     cfg,
-			AppAgent:   &appAgent,
-			Runner:     &r,
-			SessionSvc: sessionSvc,
-			SessionID:  &sessionID,
-			Readline:   rl,
+			Ctx:         ctx,
+			Config:      cfg,
+			AppAgent:    &appAgent,
+			ActiveModel: &activeModel,
+			Runner:      &r,
+			SessionSvc:  sessionSvc,
+			SessionID:   &sessionID,
+			Readline:    rl,
 		}
 
 		res := cmdRegistry.Dispatch(input, cmdCtx)
@@ -94,7 +103,11 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 		}
 
 		fmt.Printf("\n%s\n", AssistantBadge.Render("[Assistant]"))
-		tracker := NewStreamTrackerWithConfig(sessionID, cfg)
+		var usageTracker *ollama.Usage
+		if activeModel != nil {
+			usageTracker = activeModel.Usage()
+		}
+		tracker := NewStreamTrackerWithConfig(sessionID, cfg, usageTracker)
 
 		if err := ExecuteStreamLoop(ctx, r, sessionID, userMsg, tracker, maxTurns); err != nil {
 			fmt.Printf("\n\033[31m[Error]: %v\033[0m\n", err)

@@ -194,31 +194,34 @@ func FetchModelContextLength(baseURL, apiKey, modelName string) (int, error) {
 		return 32768, err
 	}
 
-	// 1. Inspect model_info map for *.context_length entries
-	if showResp.ModelInfo != nil {
-		for k, v := range showResp.ModelInfo {
-			if strings.HasSuffix(k, ".context_length") {
-				switch val := v.(type) {
-				case float64:
-					if int(val) > 0 {
-						return int(val), nil
-					}
-				case int:
-					if val > 0 {
-						return val, nil
-					}
-				}
-			}
-		}
-	}
-
-	// 2. Parse parameters string for num_ctx <number>
+	// 1. Parse parameters string for num_ctx <number> (explicit modelfile config)
 	if showResp.Parameters != "" {
 		re := regexp.MustCompile(`(?i)num_ctx\s+(\d+)`)
 		matches := re.FindStringSubmatch(showResp.Parameters)
 		if len(matches) > 1 {
 			if n, err := strconv.Atoi(matches[1]); err == nil && n > 0 {
 				return n, nil
+			}
+		}
+	}
+
+	// 2. Inspect model_info map for *.context_length entries (cap default at 32768)
+	if showResp.ModelInfo != nil {
+		for k, v := range showResp.ModelInfo {
+			if strings.HasSuffix(k, ".context_length") {
+				var valInt int
+				switch val := v.(type) {
+				case float64:
+					valInt = int(val)
+				case int:
+					valInt = val
+				}
+				if valInt > 0 {
+					if valInt > 32768 {
+						return 32768, nil
+					}
+					return valInt, nil
+				}
 			}
 		}
 	}
@@ -282,6 +285,7 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 			Messages: messages,
 			Tools:    openAITools,
 			Stream:   stream,
+			Options:  map[string]any{"num_ctx": m.ctxLength},
 		}
 		if stream {
 			payload.StreamOps = &StreamOptions{IncludeUsage: true}

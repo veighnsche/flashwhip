@@ -12,16 +12,16 @@ import (
 	"flashwhip/pkg/tools"
 )
 
-// BuildAgent creates and initializes an ADK 2.0 LLM agent with the configured model backend and registered toolsets.
-func BuildAgent(ctx context.Context, cfg *config.Config) (agent.Agent, error) {
+// BuildAgentWithModel creates and initializes an ADK 2.0 LLM agent and returns both the agent and underlying Ollama model.
+func BuildAgentWithModel(ctx context.Context, cfg *config.Config) (agent.Agent, *ollama.Model, error) {
 	model, err := ollama.NewModel(cfg.ModelName, cfg.BaseURL, cfg.APIKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Ollama model provider (%s): %w", cfg.BaseURL, err)
+		return nil, nil, fmt.Errorf("failed to initialize Ollama model provider (%s): %w", cfg.BaseURL, err)
 	}
 
 	defaultTools, err := tools.DefaultTools()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load default tools: %w", err)
+		return nil, nil, fmt.Errorf("failed to load default tools: %w", err)
 	}
 
 	// Inject live project context (cwd, directory layout, coding rules) into the
@@ -36,9 +36,15 @@ func BuildAgent(ctx context.Context, cfg *config.Config) (agent.Agent, error) {
 		Tools:       defaultTools,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create llmagent: %w", err)
+		return nil, nil, fmt.Errorf("failed to create llmagent: %w", err)
 	}
 
-	return a, nil
+	return a, model, nil
+}
+
+// BuildAgent creates and initializes an ADK 2.0 LLM agent.
+func BuildAgent(ctx context.Context, cfg *config.Config) (agent.Agent, error) {
+	a, _, err := BuildAgentWithModel(ctx, cfg)
+	return a, err
 }
 

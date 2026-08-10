@@ -21,13 +21,14 @@ import (
 
 // CommandContext holds the execution context and state references for REPL commands.
 type CommandContext struct {
-	Ctx        context.Context
-	Config     *config.Config
-	AppAgent   *agent.Agent
-	Runner     **runner.Runner
-	SessionSvc session.Service
-	SessionID  *string
-	Readline   *readline.Instance
+	Ctx         context.Context
+	Config      *config.Config
+	AppAgent    *agent.Agent
+	ActiveModel **ollama.Model
+	Runner      **runner.Runner
+	SessionSvc  session.Service
+	SessionID   *string
+	Readline    *readline.Instance
 }
 
 // CommandResult represents the outcome of executing a command.
@@ -247,12 +248,15 @@ func DefaultRegistry() *CommandRegistry {
 			if len(args) >= 1 {
 				targetModel := args[0]
 				ctx.Config.ModelName = targetModel
-				newAgent, aErr := fagent.BuildAgent(ctx.Ctx, ctx.Config)
+				newAgent, newModel, aErr := fagent.BuildAgentWithModel(ctx.Ctx, ctx.Config)
 				if aErr != nil {
 					fmt.Printf("\033[31m[Error]: Failed to switch model to %q: %v\033[0m\n\n", targetModel, aErr)
 					return CommandResult{}, aErr
 				}
 				*ctx.AppAgent = newAgent
+				if ctx.ActiveModel != nil {
+					*ctx.ActiveModel = newModel
+				}
 				if ctx.Runner != nil && *ctx.Runner != nil {
 					newRunner, _ := runner.New(runner.Config{
 						AppName:           "flashwhip",
@@ -304,8 +308,16 @@ func DefaultRegistry() *CommandRegistry {
 				ctxLen = 32768
 			}
 
-			totalChars := 0
+			tokens := 0
+			if ctx.ActiveModel != nil && *ctx.ActiveModel != nil {
+				_, _, lastTotal := (*ctx.ActiveModel).Usage().LastContextTokens()
+				if lastTotal > 0 {
+					tokens = lastTotal
+				}
+			}
+
 			turnCount := 0
+			totalChars := 0
 			database, err := db.DefaultDB()
 			if err == nil && sID != "" {
 				contents, cErr := database.GetSessionGenAIContents(sID)
@@ -319,8 +331,11 @@ func DefaultRegistry() *CommandRegistry {
 				}
 			}
 
-			estTokens := totalChars / 4
-			pct := float64(estTokens) / float64(ctxLen) * 100
+			if tokens == 0 {
+				tokens = 1800 + (totalChars / 4)
+			}
+
+			pct := float64(tokens) / float64(ctxLen) * 100
 			if pct > 100 {
 				pct = 100
 			}
@@ -332,13 +347,20 @@ func DefaultRegistry() *CommandRegistry {
 			}
 			bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 
+			var statusNote string
+			if pct >= 90.0 {
+				statusNote = " 🚨 [Context Almost Full! Run /compact]"
+			} else if pct >= 75.0 {
+				statusNote = " ⚠️ [Context Filling Up]"
+			}
+
 			fmt.Println()
 			fmt.Println(ThinkingBadge.Render("⚡ FLASHWHIP TOKEN & CONTEXT USAGE:"))
 			fmt.Printf("  • Active Model:       %s\n", InfoValue.Render(ctx.Config.ModelName))
 			fmt.Printf("  • Max Context Window: %s tokens\n", InfoValue.Render(fmt.Sprintf("%d", ctxLen)))
 			fmt.Printf("  • Conversation Turns: %s\n", InfoValue.Render(fmt.Sprintf("%d", turnCount)))
-			fmt.Printf("  • Session History:    ~%s chars (~%s tokens)\n", InfoValue.Render(fmt.Sprintf("%d", totalChars)), InfoValue.Render(fmt.Sprintf("%d", estTokens)))
-			fmt.Printf("  • Context Usage:      [%s] %.2f%%\n\n", bar, pct)
+			fmt.Printf("  • Context Tokens:     %s / %s tokens\n", InfoValue.Render(fmt.Sprintf("%d", tokens)), InfoValue.Render(fmt.Sprintf("%d", ctxLen)))
+			fmt.Printf("  • Context Usage:      [%s] %.2f%%%s\n\n", bar, pct, statusNote)
 
 			return CommandResult{}, nil
 		},

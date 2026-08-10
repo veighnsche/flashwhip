@@ -7,10 +7,12 @@ import (
 
 // Usage tracks cumulative token consumption across conversation turns.
 type Usage struct {
-	mu            sync.Mutex
-	promptTokens  int
-	completionTok int
-	totalTokens   int
+	mu                sync.Mutex
+	promptTokens      int
+	completionTok     int
+	totalTokens       int
+	lastPromptTok     int
+	lastCompletionTok int
 }
 
 // NewUsage creates a new usage tracker.
@@ -25,6 +27,12 @@ func (u *Usage) Record(prompt, completion, total int) {
 	u.promptTokens += prompt
 	u.completionTok += completion
 	u.totalTokens += total
+	if prompt > 0 {
+		u.lastPromptTok = prompt
+	}
+	if completion > 0 {
+		u.lastCompletionTok = completion
+	}
 }
 
 // Get returns the current cumulative token counts.
@@ -32,6 +40,13 @@ func (u *Usage) Get() (prompt, completion, total int) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.promptTokens, u.completionTok, u.totalTokens
+}
+
+// LastContextTokens returns prompt, completion, and total context tokens from the most recent turn.
+func (u *Usage) LastContextTokens() (prompt, completion, total int) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.lastPromptTok, u.lastCompletionTok, u.lastPromptTok + u.lastCompletionTok
 }
 
 // EstimatePercentage calculates usage as a percentage of context_length.
@@ -57,4 +72,6 @@ func (u *Usage) Reset() {
 	u.promptTokens = 0
 	u.completionTok = 0
 	u.totalTokens = 0
+	u.lastPromptTok = 0
+	u.lastCompletionTok = 0
 }
