@@ -278,12 +278,21 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 			}
 		}
 
+		var maxTokens int
+		if req.Config != nil && req.Config.MaxOutputTokens > 0 {
+			maxTokens = int(req.Config.MaxOutputTokens)
+		}
+		if maxTokens <= 0 {
+			maxTokens = 4096
+		}
+
 		payload := ChatRequest{
-			Model:    m.modelName,
-			Messages: messages,
-			Tools:    openAITools,
-			Stream:   stream,
-			Options:  map[string]any{"num_ctx": m.ctxLength},
+			Model:     m.modelName,
+			Messages:  messages,
+			Tools:     openAITools,
+			Stream:    stream,
+			MaxTokens: maxTokens,
+			Options:   map[string]any{"num_ctx": m.ctxLength},
 		}
 		if stream {
 			payload.StreamOps = &StreamOptions{IncludeUsage: true}

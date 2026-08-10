@@ -40,6 +40,7 @@ type ChatRequest struct {
 	Tools     []OpenAITool   `json:"tools,omitempty"`
 	Stream    bool           `json:"stream"`
 	StreamOps *StreamOptions `json:"stream_options,omitempty"`
+	MaxTokens int            `json:"max_tokens,omitempty"`
 	Options   map[string]any `json:"options,omitempty"`
 }
 

@@ -1,10 +1,14 @@
 package ollama
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/genai"
 )
 
 func TestFetchAvailableModels(t *testing.T) {
@@ -75,3 +79,56 @@ func TestFetchModelContextLength_Fallback(t *testing.T) {
 		t.Errorf("ctxLen fallback = %d, want 32768", ctxLen)
 	}
 }
+
+func TestChatRequest_MaxTokensPayload(t *testing.T) {
+	var receivedBody ChatRequest
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/chat/completions" {
+			_ = json.NewDecoder(r.Body).Decode(&receivedBody)
+			resp := ChatResponse{
+				ID:    "test-id",
+				Model: "test-model",
+				Choices: []ChatChoice{
+					{
+						Index: 0,
+						Message: ChatChoiceMessage{
+							Role:    "assistant",
+							Content: "Hello",
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	m, err := NewModel("test-model", ts.URL, "")
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+
+	req := &model.LLMRequest{
+		Contents: []*genai.Content{
+			{
+				Role:  "user",
+				Parts: []*genai.Part{{Text: "Hi"}},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	for _, err := range m.GenerateContent(ctx, req, false) {
+		if err != nil {
+			t.Fatalf("GenerateContent failed: %v", err)
+		}
+	}
+
+	if receivedBody.MaxTokens != 4096 {
+		t.Errorf("receivedBody.MaxTokens = %d, want 4096", receivedBody.MaxTokens)
+	}
+}
+
