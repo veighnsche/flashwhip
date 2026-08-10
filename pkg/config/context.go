@@ -53,13 +53,8 @@ func BuildProjectContext(projectRoot string) string {
 	}
 	sb.WriteString("```\n\n")
 
-	sb.WriteString("**Coding harness rules**:\n")
-	sb.WriteString("- Always read a file before writing or editing it.\n")
-	sb.WriteString("- Prefer small, targeted edits over full rewrites.\n")
-	sb.WriteString("- After making changes, call `git_diff` to review your own edits.\n")
-	sb.WriteString("- Use `grep_search` and `file_search` to orient yourself before assuming file locations.\n")
-	sb.WriteString("- Do not delete files unless explicitly instructed.\n")
-	sb.WriteString("---")
+	sb.WriteString("\n## Tool Usage Guidelines\nWhen multiple tools could solve a problem, follow this priority:\n1. **Explore first**: `file_search` → `grep_search` → `list_dir` to map the codebase before making changes\n2. **Read before edit**: Always use `read_file` on files you intend to modify—even if you think you know their contents\n3. **Execute with care**: Use `exec_command` for go test, go build, git operations; avoid destructive commands without explicit user confirmation\n4. **Review your work**: After any file changes, run `git_diff` to verify and explain what changed\n5. **External research**: Prefer `web_search` for factual info; use `web_fetch` only when you need full page content\n\n## Workflow Patterns\n- **Debugging**: Reproduce first (read relevant code) → search for error pattern → propose minimal fix → test incrementally\n- **Feature work**: Understand existing architecture (`file_search` + `grep_search`) → plan interface changes → implement → verify with tests or Builds\n- **Refactoring**: Map all usages with `grep_search` → identify safe boundaries → make targeted edits → run check suite\n- **One-liner answers**: Respond directly without tool calls unless the question requires file inspection\n\n## Safety Rules (Non-Negotiable)\n- Never delete files without explicit user instruction\n- Don't mutate files outside the current project context unless told\n- If a tool fails, surface the error cleanly—don't retry aggressively or hide failures\n- When uncertain about project structure, ask before assuming\n")
+
 
 	return sb.String()
 }

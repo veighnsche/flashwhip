@@ -25,6 +25,8 @@ type Model struct {
 	apiKey    string
 	client    *http.Client
 	adapter   ModelAdapter
+	usage     *Usage
+	ctxLength int
 }
 
 func NewModel(modelName, baseURL, apiKey string) (*Model, error) {
@@ -44,7 +46,7 @@ func NewModel(modelName, baseURL, apiKey string) (*Model, error) {
 		baseURL:   baseURL,
 		apiKey:    apiKey,
 		client:    fnet.DefaultHTTPClient(),
-		adapter:   SelectAdapter(modelName),
+		usage:     NewUsage(),
 	}, nil
 }
 
@@ -171,10 +173,13 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 		}
 
 		payload := ChatRequest{
-			Model:    m.modelName,
+			Model:  m.modelName,
 			Messages: messages,
-			Tools:    openAITools,
-			Stream:   stream,
+			Tools:  openAITools,
+			Stream: stream,
+		}
+		if stream {
+			payload.StreamOps = &StreamOptions{IncludeUsage: true}
 		}
 
 		bodyBytes, err := json.Marshal(payload)
@@ -291,6 +296,11 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 				var streamChunk ChatStreamResponse
 				if err := json.Unmarshal([]byte(dataStr), &streamChunk); err != nil {
 					continue
+				}
+
+				// Track token usage from Ollama's special usage chunk
+				if streamChunk.Usage != nil {
+					m.usage.Record(streamChunk.Usage.PromptTokens, streamChunk.Usage.CompletionTok, streamChunk.Usage.TotalTokens)
 				}
 
 				if len(streamChunk.Choices) > 0 {

@@ -30,11 +30,23 @@ type ChatMessage struct {
 	Name       string           `json:"name,omitempty"`
 }
 
+type StreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
 type ChatRequest struct {
-	Model    string        `json:"model"`
-	Messages []ChatMessage `json:"messages"`
-	Tools    []OpenAITool  `json:"tools,omitempty"`
-	Stream   bool          `json:"stream"`
+	Model     string        `json:"model"`
+	Messages  []ChatMessage `json:"messages"`
+	Tools     []OpenAITool  `json:"tools,omitempty"`
+	Stream    bool          `json:"stream"`
+	StreamOps *StreamOptions `json:"stream_options,omitempty"`
+}
+
+// UsageChunk holds token counts from Ollama usage response chunks.
+type UsageChunk struct {
+	PromptTokens  int `json:"prompt_tokens"`
+	CompletionTok int `json:"completion_tokens"`
+	TotalTokens   int `json:"total_tokens"`
 }
 
 type ChatStreamToolCallDelta struct {
@@ -61,6 +73,7 @@ type ChatStreamResponse struct {
 	ID      string             `json:"id"`
 	Model   string             `json:"model"`
 	Choices []ChatStreamChoice `json:"choices"`
+	Usage   *UsageChunk        `json:"usage,omitempty"`
 }
 
 type ChatChoiceMessage struct {
