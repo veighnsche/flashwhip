@@ -42,6 +42,28 @@ func TestRenderCombinedToolExecution(t *testing.T) {
 		}
 	})
 
+	t.Run("read_file line range slice with total lines", func(t *testing.T) {
+		args := map[string]any{"file_path": "/Users/vince/Projects/flashwhip/pkg/tools/web_fetch.go", "start_line": 140, "end_line": 165}
+		resp := map[string]any{"total_lines": 213, "start_line": 140, "end_line": 165}
+
+		out := RenderCombinedToolExecution("read_file", args, resp, cwd)
+		expected := "Read: pkg/tools/web_fetch.go (L140-165, 26 of 213 lines)"
+		if !strings.Contains(out, expected) {
+			t.Errorf("RenderCombinedToolExecution read_file range = %q, want substring %q", out, expected)
+		}
+	})
+
+	t.Run("read_file line range slice without total lines", func(t *testing.T) {
+		args := map[string]any{"file_path": "/Users/vince/Projects/flashwhip/test.txt", "start_line": 10, "end_line": 20}
+		resp := map[string]any{"start_line": 10, "end_line": 20}
+
+		out := RenderCombinedToolExecution("read_file", args, resp, cwd)
+		expected := "Read: test.txt (L10-20, 11 lines)"
+		if !strings.Contains(out, expected) {
+			t.Errorf("RenderCombinedToolExecution read_file range = %q, want substring %q", out, expected)
+		}
+	})
+
 	t.Run("exec_command success single line", func(t *testing.T) {
 		args := map[string]any{"command": "go test ./..."}
 		resp := map[string]any{"exit_code": 0, "duration_ms": 400}

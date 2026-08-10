@@ -136,12 +136,19 @@ func formatActionAndOutcome(name string, args map[string]any, response map[strin
 		var meta []string
 		start, hasStart := toInt(getArgOrRespVal(args, response, "start_line"))
 		end, hasEnd := toInt(getArgOrRespVal(args, response, "end_line"))
-		if hasStart && hasEnd && start > 0 && end > 0 {
-			meta = append(meta, fmt.Sprintf("L%d-%d", start, end))
+		totalLines, hasTotal := toInt(getArgOrRespVal(args, response, "total_lines"))
+
+		if hasStart && hasEnd && start > 0 && end >= start {
+			returnedLines := end - start + 1
+			if hasTotal && totalLines > 0 && returnedLines != totalLines {
+				meta = append(meta, fmt.Sprintf("L%d-%d, %d of %d lines", start, end, returnedLines, totalLines))
+			} else {
+				meta = append(meta, fmt.Sprintf("L%d-%d, %d lines", start, end, returnedLines))
+			}
+		} else if hasTotal && totalLines > 0 {
+			meta = append(meta, fmt.Sprintf("%d lines", totalLines))
 		}
-		if totalLines, ok := response["total_lines"]; ok {
-			meta = append(meta, fmt.Sprintf("%v lines", totalLines))
-		}
+
 		if len(meta) > 0 {
 			return fmt.Sprintf("%s (%s)", action, ToolMutedStyle.Render(strings.Join(meta, ", ")))
 		}
