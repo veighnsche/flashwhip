@@ -36,9 +36,15 @@ func TestSanitizeUTF8(t *testing.T) {
 func TestExtractXMLToolCalls(t *testing.T) {
 	inputContent := `I will fetch the page for you.
 <tool_call>
-<function=web_fetch>
-<parameter=url>
-https://weather.com/today
+<function=gh_issue_view>
+<parameter=issue_number>
+11
+</parameter>
+<parameter=comments>
+True
+</parameter>
+<parameter=repo_dir>
+/Users/vince/Projects/flashwhip
 </parameter>
 </function>
 </tool_call>`
@@ -53,12 +59,22 @@ https://weather.com/today
 	}
 
 	fnCall := toolParts[0].FunctionCall
-	if fnCall.Name != "web_fetch" {
-		t.Errorf("FunctionCall.Name = %q, want 'web_fetch'", fnCall.Name)
+	if fnCall.Name != "gh_issue_view" {
+		t.Errorf("FunctionCall.Name = %q, want 'gh_issue_view'", fnCall.Name)
 	}
 
-	urlVal, ok := fnCall.Args["url"].(string)
-	if !ok || urlVal != "https://weather.com/today" {
-		t.Errorf("fnCall.Args['url'] = %v, want 'https://weather.com/today'", fnCall.Args["url"])
+	issueNum, ok := fnCall.Args["issue_number"].(int64)
+	if !ok || issueNum != 11 {
+		t.Errorf("fnCall.Args['issue_number'] = %v (%T), want int64 11", fnCall.Args["issue_number"], fnCall.Args["issue_number"])
+	}
+
+	commentsBool, ok := fnCall.Args["comments"].(bool)
+	if !ok || !commentsBool {
+		t.Errorf("fnCall.Args['comments'] = %v (%T), want bool true", fnCall.Args["comments"], fnCall.Args["comments"])
+	}
+
+	repoDir, ok := fnCall.Args["repo_dir"].(string)
+	if !ok || repoDir != "/Users/vince/Projects/flashwhip" {
+		t.Errorf("fnCall.Args['repo_dir'] = %v, want '/Users/vince/Projects/flashwhip'", fnCall.Args["repo_dir"])
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"google.golang.org/adk/v2/model"
@@ -197,6 +198,27 @@ var (
 	paramRegex    = regexp.MustCompile(`(?s)<parameter=([^>]+)>\s*(.*?)\s*</parameter>`)
 )
 
+func parseXMLParamValue(val string) any {
+	trimmed := strings.TrimSpace(val)
+	if strings.EqualFold(trimmed, "true") {
+		return true
+	}
+	if strings.EqualFold(trimmed, "false") {
+		return false
+	}
+	if i, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+		return i
+	}
+	if f, err := strconv.ParseFloat(trimmed, 64); err == nil {
+		return f
+	}
+	var jsonVal any
+	if err := json.Unmarshal([]byte(trimmed), &jsonVal); err == nil {
+		return jsonVal
+	}
+	return trimmed
+}
+
 func extractXMLToolCalls(content string) (string, []*genai.Part) {
 	matches := toolCallRegex.FindAllStringSubmatchIndex(content, -1)
 	if len(matches) == 0 {
@@ -219,7 +241,7 @@ func extractXMLToolCalls(content string) (string, []*genai.Part) {
 		for _, pm := range paramMatches {
 			pName := strings.TrimSpace(pm[1])
 			pVal := strings.TrimSpace(pm[2])
-			argsMap[pName] = pVal
+			argsMap[pName] = parseXMLParamValue(pVal)
 		}
 
 		toolCallParts = append(toolCallParts, &genai.Part{
