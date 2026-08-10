@@ -16,6 +16,7 @@ import (
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
 
+	"flashwhip/pkg/config"
 	"flashwhip/pkg/errors"
 	fnet "flashwhip/pkg/net"
 )
@@ -139,8 +140,8 @@ func fetchWebPage(_ agent.Context, in WebFetchInput) (WebFetchOutput, error) {
 					jinaBytes, _ = decompressGzip(jinaBytes)
 					jinaText := cleanText(string(jinaBytes))
 					if len(jinaText) > 100 && !strings.Contains(jinaText, "403 Forbidden") {
-						if len(jinaText) > 4000 {
-							jinaText = jinaText[:4000] + "\n\n... [content truncated for token safety]"
+						if len(jinaText) > config.MaxWebFetchBytes {
+							jinaText = jinaText[:config.MaxWebFetchBytes] + "\n\n... [content truncated for token safety]"
 						}
 						return WebFetchOutput{
 							Title:      title,
@@ -154,8 +155,8 @@ func fetchWebPage(_ agent.Context, in WebFetchInput) (WebFetchOutput, error) {
 		}
 
 		markdownText = fmt.Sprintf("Anti-bot protection page detected (Cloudflare/BotGuard). Tip: Search for alternative sources or rely on web_search snippets.\n\n%s", markdownText[:minVal(len(markdownText), 400)])
-	} else if len(markdownText) > 4000 {
-		markdownText = markdownText[:4000] + "\n\n... [content truncated for token safety]"
+	} else if len(markdownText) > config.MaxWebFetchBytes {
+		markdownText = markdownText[:config.MaxWebFetchBytes] + "\n\n... [content truncated for token safety]"
 	}
 
 	return WebFetchOutput{

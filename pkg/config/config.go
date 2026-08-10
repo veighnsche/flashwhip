@@ -23,6 +23,8 @@ const (
 	DefaultUserAgent   = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 	MaxContentLength   = 4000
 	MaxSearchResults   = 6
+	MaxFileReadBytes   = 20_000
+	MaxWebFetchBytes   = 12_000
 )
 
 // LoadConfig creates a Config instance, pulling from environment variables with fallback defaults.

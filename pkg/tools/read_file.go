@@ -9,10 +9,9 @@ import (
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
 
+	"flashwhip/pkg/config"
 	"flashwhip/pkg/errors"
 )
-
-const maxReadFileBytes = 20_000
 
 type ReadFileArgs struct {
 	FilePath  string `json:"file_path" jsonschema:"The local file path to read"`
@@ -78,8 +77,8 @@ func readFileSnippet(_ agent.Context, args ReadFileArgs) (ReadFileOutput, error)
 	content := strings.Join(selectedLines, "\n")
 
 	truncated := false
-	if len(content) > maxReadFileBytes {
-		content = content[:maxReadFileBytes] + "\n... [content truncated — use start_line/end_line to paginate]"
+	if len(content) > config.MaxFileReadBytes {
+		content = content[:config.MaxFileReadBytes] + "\n... [content truncated — use start_line/end_line to paginate]"
 		truncated = true
 	}
 
