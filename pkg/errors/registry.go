@@ -296,8 +296,15 @@ var registry = map[Code]ErrorSpec{
 		Code:        ErrCodeAgentMiddlewareFailed,
 		Name:        "ErrCodeAgentMiddlewareFailed",
 		Category:    "Agent",
-		Description: "Failed to process content through adaptive pruner middleware.",
-		Remedy:      "Check history contents structure.",
+		Description: "Failed executing agent middleware or content transformation.",
+		Remedy:      "Inspect middleware pipeline configuration.",
+	},
+	ErrCodeLoopDetected: {
+		Code:        ErrCodeLoopDetected,
+		Name:        "ErrCodeLoopDetected",
+		Category:    "Agent",
+		Description: "Repetitive tool call loop or stalled execution pattern detected by Stall Guard.",
+		Remedy:      "Modify prompt instructions, change parameters, or break execution loop.",
 	},
 
 	// Tools (5000-5999)

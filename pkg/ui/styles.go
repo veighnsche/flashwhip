@@ -80,6 +80,12 @@ var (
 	ToolErrorBadge = lipgloss.NewStyle().
 			Foreground(ErrorColor).
 			Bold(true)
+
+	StallWarningBadge = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#000000")).
+			Background(lipgloss.Color("#F59E0B")).
+			Bold(true).
+			Padding(0, 1)
 )
 
 

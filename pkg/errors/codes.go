@@ -54,6 +54,7 @@ const (
 	ErrCodeAgentRunnerInitFailed Code = 4004
 	ErrCodeAgentStreamCancelled  Code = 4005
 	ErrCodeAgentMiddlewareFailed Code = 4006
+	ErrCodeLoopDetected          Code = 4007
 
 	// Tool Execution Errors (5000-5999)
 	ErrCodeToolExecFailed       Code = 5001
@@ -81,3 +82,6 @@ const (
 
 // ErrMaxTurnsReached is returned when the agent exceeds the configured turn limit.
 var ErrMaxTurnsReached = New(ErrCodeMaxTurnsReached, "max turns reached")
+
+// ErrLoopDetected is returned when repetitive tool call loops or stalled execution are detected.
+var ErrLoopDetected = New(ErrCodeLoopDetected, "repetitive tool call loop detected")

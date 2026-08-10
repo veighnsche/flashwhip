@@ -10,6 +10,7 @@ import (
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/genai"
 
+	"flashwhip/pkg/agent/middleware"
 	"flashwhip/pkg/db"
 	ferrs "flashwhip/pkg/errors"
 )
@@ -26,6 +27,7 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 	completedTurns := 0
 	pendingCalls := make(map[string]map[string]any)
 	var lastPrintedToolLine string
+	stallDetector := middleware.NewStallDetector(3)
 
 	for ev, err := range r.Run(ctx, "user", sessionID, userMsg, agent.RunConfig{StreamingMode: agent.StreamingModeSSE}) {
 		if err != nil {
@@ -67,6 +69,13 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 						pendingCalls[part.FunctionCall.Name] = part.FunctionCall.Args
 					}
 					assistantParts = append(assistantParts, part)
+
+					if isLoop, info := stallDetector.RecordCall(part.FunctionCall.Name, part.FunctionCall.Args); isLoop {
+						fmt.Printf("\n%s Repetitive tool loop detected (%s repeated %d times). Pausing execution to prevent token exhaustion.\n",
+							StallWarningBadge.Render("⚠️ Stall Guard:"), info.ToolName, info.ConsecutiveCount)
+						_ = os.Stdout.Sync()
+						break
+					}
 				}
 
 				if part.FunctionResponse != nil {
