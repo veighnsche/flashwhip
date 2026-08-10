@@ -93,6 +93,7 @@ type ChatResponse struct {
 	ID      string       `json:"id"`
 	Model   string       `json:"model"`
 	Choices []ChatChoice `json:"choices"`
+	Usage   *UsageChunk  `json:"usage,omitempty"`
 }
 
 type ModelInfo struct {
@@ -107,4 +108,17 @@ type ModelListResponse struct {
 	Object string      `json:"object,omitempty"`
 	Data   []ModelInfo `json:"data,omitempty"`
 	Models []ModelInfo `json:"models,omitempty"`
+}
+
+type ShowModelRequest struct {
+	Name  string `json:"name,omitempty"`
+	Model string `json:"model,omitempty"`
+}
+
+type ShowModelResponse struct {
+	Modelfile  string         `json:"modelfile,omitempty"`
+	Parameters string         `json:"parameters,omitempty"`
+	Template   string         `json:"template,omitempty"`
+	Details    any            `json:"details,omitempty"`
+	ModelInfo  map[string]any `json:"model_info,omitempty"`
 }

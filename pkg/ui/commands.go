@@ -274,15 +274,72 @@ func DefaultRegistry() *CommandRegistry {
 			} else {
 				fmt.Println(ThinkingBadge.Render("Available Endpoint Models:"))
 				for _, mName := range modelsList {
+					mCtxLen, _ := ollama.FetchModelContextLength(ctx.Config.BaseURL, ctx.Config.APIKey, mName)
+					ctxStr := fmt.Sprintf("(max context: %d tokens)", mCtxLen)
 					if mName == ctx.Config.ModelName {
-						fmt.Printf("  • %s %s\n", InfoValue.Render(mName), ToolResultBadge.Render("(active)"))
+						fmt.Printf("  • %-25s %s %s\n", InfoValue.Render(mName), ToolResultBadge.Render("(active)"), ctxStr)
 					} else {
-						fmt.Printf("  • %s\n", mName)
+						fmt.Printf("  • %-25s %s\n", mName, ctxStr)
 					}
 				}
 				fmt.Println("\n  Tip: Switch active model using '/model <model_name>'")
 				fmt.Println()
 			}
+			return CommandResult{}, nil
+		},
+	})
+
+	reg.Register(Command{
+		Name:        "/tokens",
+		Aliases:     []string{"/usage", "/context"},
+		Description: "View active session token usage and model max context window",
+		Handler: func(ctx *CommandContext, args []string) (CommandResult, error) {
+			sID := ""
+			if ctx.SessionID != nil {
+				sID = *ctx.SessionID
+			}
+
+			ctxLen, _ := ollama.FetchModelContextLength(ctx.Config.BaseURL, ctx.Config.APIKey, ctx.Config.ModelName)
+			if ctxLen <= 0 {
+				ctxLen = 32768
+			}
+
+			totalChars := 0
+			turnCount := 0
+			database, err := db.DefaultDB()
+			if err == nil && sID != "" {
+				contents, cErr := database.GetSessionGenAIContents(sID)
+				if cErr == nil {
+					turnCount = len(contents)
+					for _, c := range contents {
+						for _, p := range c.Parts {
+							totalChars += len(p.Text)
+						}
+					}
+				}
+			}
+
+			estTokens := totalChars / 4
+			pct := float64(estTokens) / float64(ctxLen) * 100
+			if pct > 100 {
+				pct = 100
+			}
+
+			barWidth := 20
+			filled := int((pct / 100.0) * float64(barWidth))
+			if filled > barWidth {
+				filled = barWidth
+			}
+			bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+
+			fmt.Println()
+			fmt.Println(ThinkingBadge.Render("⚡ FLASHWHIP TOKEN & CONTEXT USAGE:"))
+			fmt.Printf("  • Active Model:       %s\n", InfoValue.Render(ctx.Config.ModelName))
+			fmt.Printf("  • Max Context Window: %s tokens\n", InfoValue.Render(fmt.Sprintf("%d", ctxLen)))
+			fmt.Printf("  • Conversation Turns: %s\n", InfoValue.Render(fmt.Sprintf("%d", turnCount)))
+			fmt.Printf("  • Session History:    ~%s chars (~%s tokens)\n", InfoValue.Render(fmt.Sprintf("%d", totalChars)), InfoValue.Render(fmt.Sprintf("%d", estTokens)))
+			fmt.Printf("  • Context Usage:      [%s] %.2f%%\n\n", bar, pct)
+
 			return CommandResult{}, nil
 		},
 	})

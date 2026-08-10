@@ -10,7 +10,9 @@ import (
 	"iter"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"google.golang.org/adk/v2/model"
@@ -41,13 +43,34 @@ func NewModel(modelName, baseURL, apiKey string) (*Model, error) {
 		baseURL = baseURL + "/v1"
 	}
 
+	adapter := SelectAdapter(modelName)
+	ctxLen, _ := FetchModelContextLength(baseURL, apiKey, modelName)
+	if ctxLen <= 0 {
+		ctxLen = 32768
+	}
+
 	return &Model{
 		modelName: modelName,
 		baseURL:   baseURL,
 		apiKey:    apiKey,
 		client:    fnet.DefaultHTTPClient(),
+		adapter:   adapter,
 		usage:     NewUsage(),
+		ctxLength: ctxLen,
 	}, nil
+}
+
+// Usage returns the cumulative token usage tracker for this model session.
+func (m *Model) Usage() *Usage {
+	return m.usage
+}
+
+// ContextLength returns the discovered max context window length in tokens.
+func (m *Model) ContextLength() int {
+	if m.ctxLength <= 0 {
+		return 32768
+	}
+	return m.ctxLength
 }
 
 // Name returns the model name identifier.
@@ -121,6 +144,88 @@ func FetchAvailableModels(baseURL, apiKey string) ([]string, error) {
 	return modelNames, nil
 }
 
+// FetchModelContextLength queries the Ollama endpoint (e.g. POST hostURL/api/show) to discover the model's max token context length.
+// Returns 32768 as a default fallback if context length is not specified or endpoint is unsupported.
+func FetchModelContextLength(baseURL, apiKey, modelName string) (int, error) {
+	if baseURL == "" {
+		baseURL = "https://ollama.dimensionlab.net/v1"
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	// Strip trailing /v1 to reach Ollama native API root
+	hostURL := baseURL
+	if strings.HasSuffix(hostURL, "/v1") {
+		hostURL = strings.TrimSuffix(hostURL, "/v1")
+	}
+
+	showURL := hostURL + "/api/show"
+	client := fnet.DefaultHTTPClient()
+
+	reqPayload := ShowModelRequest{
+		Name:  modelName,
+		Model: modelName,
+	}
+	bodyBytes, err := json.Marshal(reqPayload)
+	if err != nil {
+		return 32768, err
+	}
+
+	req, err := http.NewRequest("POST", showURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return 32768, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 32768, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 32768, fmt.Errorf("show endpoint returned status %d", resp.StatusCode)
+	}
+
+	var showResp ShowModelResponse
+	if err := json.NewDecoder(resp.Body).Decode(&showResp); err != nil {
+		return 32768, err
+	}
+
+	// 1. Inspect model_info map for *.context_length entries
+	if showResp.ModelInfo != nil {
+		for k, v := range showResp.ModelInfo {
+			if strings.HasSuffix(k, ".context_length") {
+				switch val := v.(type) {
+				case float64:
+					if int(val) > 0 {
+						return int(val), nil
+					}
+				case int:
+					if val > 0 {
+						return val, nil
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Parse parameters string for num_ctx <number>
+	if showResp.Parameters != "" {
+		re := regexp.MustCompile(`(?i)num_ctx\s+(\d+)`)
+		matches := re.FindStringSubmatch(showResp.Parameters)
+		if len(matches) > 1 {
+			if n, err := strconv.Atoi(matches[1]); err == nil && n > 0 {
+				return n, nil
+			}
+		}
+	}
+
+	return 32768, nil
+}
+
 func sanitizeUTF8(s string) string {
 	s = strings.ToValidUTF8(s, "")
 	return strings.Map(func(r rune) rune {
@@ -173,10 +278,10 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 		}
 
 		payload := ChatRequest{
-			Model:  m.modelName,
+			Model:    m.modelName,
 			Messages: messages,
-			Tools:  openAITools,
-			Stream: stream,
+			Tools:    openAITools,
+			Stream:   stream,
 		}
 		if stream {
 			payload.StreamOps = &StreamOptions{IncludeUsage: true}
@@ -221,6 +326,9 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 			if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
 				yield(nil, fmt.Errorf("failed to decode chat response: %w", err))
 				return
+			}
+			if chatResp.Usage != nil {
+				m.usage.Record(chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTok, chatResp.Usage.TotalTokens)
 			}
 			if len(chatResp.Choices) == 0 {
 				yield(nil, fmt.Errorf("empty choices in chat response"))

@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"flashwhip/pkg/config"
 )
 
 func TestCommandRegistry_ExitAliases(t *testing.T) {
@@ -92,5 +94,23 @@ func TestCommandRegistry_HelpMenu(t *testing.T) {
 	}
 	if !strings.Contains(help, "/exit, /quit, exit, quit") {
 		t.Errorf("Help menu missing exit aliases")
+	}
+}
+
+func TestCommandRegistry_TokensCommand(t *testing.T) {
+	reg := DefaultRegistry()
+	cmdCtx := &CommandContext{
+		Ctx:    context.Background(),
+		Config: &config.Config{ModelName: "qwen2.5-coder:7b"},
+	}
+
+	for _, cmdStr := range []string{"/tokens", "/usage", "/context"} {
+		res := reg.Dispatch(cmdStr, cmdCtx)
+		if !res.Handled {
+			t.Errorf("Expected %q to be handled", cmdStr)
+		}
+		if res.Error != nil {
+			t.Errorf("Unexpected error dispatching %q: %v", cmdStr, res.Error)
+		}
 	}
 }
