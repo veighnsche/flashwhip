@@ -68,13 +68,20 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 					if part.FunctionCall.Args != nil {
 						pendingCalls[part.FunctionCall.Name] = part.FunctionCall.Args
 					}
-					assistantParts = append(assistantParts, part)
+					// The provider yields every tool call twice: once as a Partial
+					// stream event, then again inside the turn-complete content.
+					// Record/persist it only on the first (partial) delivery so
+					// history stays free of duplicates and stall detection isn't
+					// fed two records per real call.
+					if ev.Partial {
+						assistantParts = append(assistantParts, part)
 
-					if isLoop, info := stallDetector.RecordCall(part.FunctionCall.Name, part.FunctionCall.Args); isLoop {
-						fmt.Printf("\n%s Repetitive tool loop detected (%s repeated %d times). Pausing execution to prevent token exhaustion.\n",
-							StallWarningBadge.Render("⚠️ Stall Guard:"), info.ToolName, info.ConsecutiveCount)
-						_ = os.Stdout.Sync()
-						break
+						if isLoop, info := stallDetector.RecordCall(part.FunctionCall.Name, part.FunctionCall.Args); isLoop {
+							fmt.Printf("\n%s Repetitive tool loop detected (%s repeated %d times). Pausing execution to prevent token exhaustion.\n",
+								StallWarningBadge.Render("⚠️ Stall Guard:"), info.ToolName, info.ConsecutiveCount)
+							_ = os.Stdout.Sync()
+							break
+						}
 					}
 				}
 
