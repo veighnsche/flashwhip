@@ -18,21 +18,24 @@ type GitDiffInput struct {
 }
 
 type GitDiffOutput struct {
-	RepoDir string `json:"repo_dir"`
-	Staged  bool   `json:"staged"`
-	Diff    string `json:"diff"`
-	Empty   bool   `json:"empty"`
+	RepoDir string   `json:"repo_dir"`
+	Staged  bool     `json:"staged"`
+	Files   []string `json:"files"`
+	Diff    string   `json:"diff"`
+	Empty   bool     `json:"empty"`
 }
 
 func gitDiff(_ agent.Context, in GitDiffInput) (GitDiffOutput, error) {
 	repoDir := resolveRepoDir(in.RepoDir)
 
-	args := []string{"diff"}
+	diffArgs := []string{"diff"}
+	nameArgs := []string{"diff", "--name-only"}
 	if in.Staged {
-		args = append(args, "--cached")
+		diffArgs = append(diffArgs, "--cached")
+		nameArgs = append(nameArgs, "--cached")
 	}
 
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", diffArgs...)
 	cmd.Dir = repoDir
 
 	var stdout, stderr bytes.Buffer
@@ -43,24 +46,65 @@ func gitDiff(_ agent.Context, in GitDiffInput) (GitDiffOutput, error) {
 		return GitDiffOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "git diff failed — %s", strings.TrimSpace(stderr.String()))
 	}
 
-	diff := stdout.String()
+	// Fetch the complete list of modified files regardless of diff size so
+	// the agent never misses a changed file due to truncation.
+	nameCmd := exec.Command("git", nameArgs...)
+	nameCmd.Dir = repoDir
+	var nameOut, nameErr bytes.Buffer
+	nameCmd.Stdout = &nameOut
+	nameCmd.Stderr = &nameErr
+	if err := nameCmd.Run(); err != nil {
+		return GitDiffOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "git diff --name-only failed — %s", strings.TrimSpace(nameErr.String()))
+	}
+
+	files := []string{}
+	for _, line := range strings.Split(strings.TrimSpace(nameOut.String()), "\n") {
+		if strings.TrimSpace(line) != "" {
+			files = append(files, line)
+		}
+	}
+
+	raw := stdout.String()
+	diff := raw
+	truncated := false
 	// Cap output to keep token cost reasonable.
 	const maxBytes = 8000
 	if len(diff) > maxBytes {
-		diff = diff[:maxBytes] + "\n... [diff truncated for token safety]"
+		diff = truncateUTF8(diff, maxBytes) + "\n... [diff truncated for token safety]"
+		truncated = true
 	}
+
+	// Prepend the full modified-file list so the agent can discover every
+	// changed file even when the diff body is truncated.
+	var b strings.Builder
+	if len(files) > 0 {
+		b.WriteString("Modified files:\n")
+		for _, f := range files {
+			b.WriteString("  - ")
+			b.WriteString(f)
+			b.WriteString("\n")
+		}
+	} else {
+		b.WriteString("No modified files.\n")
+	}
+	if truncated {
+		b.WriteString("Note: diff output was truncated for token safety; the file list above is complete.\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(diff)
 
 	return GitDiffOutput{
 		RepoDir: repoDir,
 		Staged:  in.Staged,
-		Diff:    diff,
-		Empty:   strings.TrimSpace(diff) == "",
+		Files:   files,
+		Diff:    b.String(),
+		Empty:   strings.TrimSpace(raw) == "",
 	}, nil
 }
 
 func GitDiffTool() (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "git_diff",
-		Description: "Returns the uncommitted git diff for the working directory, letting the agent review its own changes. Set staged=true to see staged (cached) changes.",
+		Description: "Returns the uncommitted git diff for the working directory, preceded by a complete list of modified files, letting the agent review its own changes. Set staged=true to see staged (cached) changes.",
 	}, gitDiff)
 }
