@@ -405,6 +405,30 @@ func DefaultRegistry() *CommandRegistry {
 			}
 
 			pruned := middleware.PruneContents(contents, 1)
+			_ = database.ReplaceSessionGenAIContents(sID, pruned)
+
+			if ctx.SessionSvc != nil {
+				sessResp, crErr := ctx.SessionSvc.Create(ctx.Ctx, &session.CreateRequest{
+					AppName:   "flashwhip",
+					UserID:    "user",
+					SessionID: sID,
+				})
+				if crErr == nil {
+					for _, c := range pruned {
+						if c == nil {
+							continue
+						}
+						evt := &session.Event{
+							Author: c.Role,
+							LLMResponse: adkmodel.LLMResponse{
+								Content: c,
+							},
+						}
+						_ = ctx.SessionSvc.AppendEvent(ctx.Ctx, sessResp.Session, evt)
+					}
+				}
+			}
+
 			totalOrigChars := 0
 			for _, c := range contents {
 				for _, p := range c.Parts {

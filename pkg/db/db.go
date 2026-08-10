@@ -12,6 +12,8 @@ import (
 
 	"google.golang.org/genai"
 	_ "modernc.org/sqlite"
+
+	"flashwhip/pkg/errors"
 )
 
 type Session struct {
@@ -48,13 +50,13 @@ func DefaultDB() (*DB, error) {
 	once.Do(func() {
 		home, hErr := os.UserHomeDir()
 		if hErr != nil {
-			err = fmt.Errorf("failed to get user home directory: %w", hErr)
+			err = errors.Wrap(errors.ErrCodeDBOpenFailed, "failed to get user home directory", hErr)
 			return
 		}
 
 		dbDir := filepath.Join(home, ".flashwhip")
 		if MkErr := os.MkdirAll(dbDir, 0755); MkErr != nil {
-			err = fmt.Errorf("failed to create database directory: %w", MkErr)
+			err = errors.Wrap(errors.ErrCodeDBOpenFailed, "failed to create database directory", MkErr)
 			return
 		}
 
@@ -68,13 +70,13 @@ func DefaultDB() (*DB, error) {
 func OpenDB(dbPath string) (*DB, error) {
 	sqlDB, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open sqlite db at %q: %w", dbPath, err)
+		return nil, errors.Wrapf(errors.ErrCodeDBOpenFailed, err, "failed to open sqlite db at %q", dbPath)
 	}
 
 	database := &DB{sqlDB: sqlDB}
 	if err := database.migrate(); err != nil {
 		sqlDB.Close()
-		return nil, fmt.Errorf("failed to run migrations: %w", err)
+		return nil, errors.Wrap(errors.ErrCodeDBMigrationFailed, "failed to run migrations", err)
 	}
 
 	return database, nil
@@ -107,7 +109,7 @@ func (d *DB) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
 	`
 	if _, err := d.sqlDB.Exec(schema); err != nil {
-		return err
+		return errors.Wrap(errors.ErrCodeDBMigrationFailed, "schema execution failed", err)
 	}
 
 	// Migrations for pre-existing tables
@@ -154,7 +156,7 @@ func (d *DB) SaveContent(sessionID string, content *genai.Content) error {
 	var exists bool
 	err = d.sqlDB.QueryRow("SELECT EXISTS(SELECT 1 FROM sessions WHERE id = ?)", sessionID).Scan(&exists)
 	if err != nil {
-		return fmt.Errorf("failed to check session existence: %w", err)
+		return errors.Wrap(errors.ErrCodeDBQueryFailed, "failed to check session existence", err)
 	}
 
 	if !exists {
@@ -168,7 +170,7 @@ func (d *DB) SaveContent(sessionID string, content *genai.Content) error {
 		}
 		_, err = d.sqlDB.Exec("INSERT INTO sessions (id, title, workspace, turn_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", sessionID, title, pwd, turnIncrement, now, now)
 		if err != nil {
-			return fmt.Errorf("failed to create session %q: %w", sessionID, err)
+			return errors.Wrapf(errors.ErrCodeDBSaveFailed, err, "failed to create session %q", sessionID)
 		}
 	} else {
 		if content.Role == "assistant" || content.Role == "model" {
@@ -177,13 +179,13 @@ func (d *DB) SaveContent(sessionID string, content *genai.Content) error {
 			_, err = d.sqlDB.Exec("UPDATE sessions SET updated_at = ? WHERE id = ?", now, sessionID)
 		}
 		if err != nil {
-			return fmt.Errorf("failed to update session timestamp for %q: %w", sessionID, err)
+			return errors.Wrapf(errors.ErrCodeDBSaveFailed, err, "failed to update session timestamp for %q", sessionID)
 		}
 	}
 
 	_, err = d.sqlDB.Exec("INSERT INTO messages (session_id, role, content, json_payload, created_at) VALUES (?, ?, ?, ?, ?)", sessionID, content.Role, textSummary, jsonPayload, now)
 	if err != nil {
-		return fmt.Errorf("failed to insert message for session %q: %w", sessionID, err)
+		return errors.Wrapf(errors.ErrCodeDBSaveFailed, err, "failed to insert message for session %q", sessionID)
 	}
 
 	return nil
@@ -200,6 +202,63 @@ func (d *DB) SaveMessage(sessionID, role, content string) error {
 	return d.SaveContent(sessionID, c)
 }
 
+// ReplaceSessionGenAIContents replaces stored session messages in SQLite with a pruned content set.
+func (d *DB) ReplaceSessionGenAIContents(sessionID string, contents []*genai.Content) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	tx, err := d.sqlDB.Begin()
+	if err != nil {
+		return errors.Wrapf(errors.ErrCodeDBSaveFailed, err, "failed to start tx for session replacement %q", sessionID)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	_, err = tx.Exec("DELETE FROM messages WHERE session_id = ?", sessionID)
+	if err != nil {
+		return errors.Wrapf(errors.ErrCodeDBSaveFailed, err, "failed to clear messages for session %q", sessionID)
+	}
+
+	now := time.Now()
+	for _, content := range contents {
+		if content == nil {
+			continue
+		}
+		var textParts []string
+		for _, p := range content.Parts {
+			if p == nil {
+				continue
+			}
+			if p.Text != "" && !p.Thought {
+				textParts = append(textParts, p.Text)
+			}
+		}
+		textSummary := strings.Join(textParts, " ")
+		if textSummary == "" && len(content.Parts) > 0 {
+			textSummary = fmt.Sprintf("[%s message]", content.Role)
+		}
+
+		jsonBytes, err := json.Marshal(content)
+		jsonPayload := ""
+		if err == nil {
+			jsonPayload = string(jsonBytes)
+		}
+
+		_, err = tx.Exec("INSERT INTO messages (session_id, role, content, json_payload, created_at) VALUES (?, ?, ?, ?, ?)",
+			sessionID, content.Role, textSummary, jsonPayload, now)
+		if err != nil {
+			return errors.Wrapf(errors.ErrCodeDBSaveFailed, err, "failed to re-insert pruned message for session %q", sessionID)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return errors.Wrapf(errors.ErrCodeDBSaveFailed, err, "failed to commit transaction for session %q", sessionID)
+	}
+
+	return nil
+}
+
 // GetSession returns session info and all text messages for sessionID.
 func (d *DB) GetSession(sessionID string) (*Session, []Message, error) {
 	d.mu.Lock()
@@ -208,12 +267,12 @@ func (d *DB) GetSession(sessionID string) (*Session, []Message, error) {
 	var s Session
 	err := d.sqlDB.QueryRow("SELECT id, title, workspace, turn_count, created_at, updated_at FROM sessions WHERE id = ?", sessionID).Scan(&s.ID, &s.Title, &s.Workspace, &s.TurnCount, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get session %q: %w", sessionID, err)
+		return nil, nil, errors.Wrapf(errors.ErrCodeDBSessionNotFound, err, "failed to get session %q", sessionID)
 	}
 
 	rows, err := d.sqlDB.Query("SELECT id, session_id, role, content, json_payload, created_at FROM messages WHERE session_id = ? ORDER BY id ASC", sessionID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to query messages for session %q: %w", sessionID, err)
+		return nil, nil, errors.Wrapf(errors.ErrCodeDBQueryFailed, err, "failed to query messages for session %q", sessionID)
 	}
 	defer rows.Close()
 
@@ -222,7 +281,7 @@ func (d *DB) GetSession(sessionID string) (*Session, []Message, error) {
 		var m Message
 		var jsonPayload sql.NullString
 		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &jsonPayload, &m.CreatedAt); err != nil {
-			return nil, nil, err
+			return nil, nil, errors.Wrap(errors.ErrCodeDBQueryFailed, "row scan failed", err)
 		}
 		if jsonPayload.Valid {
 			m.JSONPayload = jsonPayload.String
@@ -271,7 +330,7 @@ func (d *DB) ListSessions() ([]Session, error) {
 
 	rows, err := d.sqlDB.Query("SELECT id, title, turn_count, created_at, updated_at FROM sessions ORDER BY updated_at DESC")
 	if err != nil {
-		return nil, fmt.Errorf("failed to list sessions: %w", err)
+		return nil, errors.Wrap(errors.ErrCodeDBQueryFailed, "failed to list sessions", err)
 	}
 	defer rows.Close()
 
@@ -279,7 +338,7 @@ func (d *DB) ListSessions() ([]Session, error) {
 	for rows.Next() {
 		var s Session
 		if err := rows.Scan(&s.ID, &s.Title, &s.TurnCount, &s.CreatedAt, &s.UpdatedAt); err != nil {
-			return nil, err
+			return nil, errors.Wrap(errors.ErrCodeDBQueryFailed, "row scan failed", err)
 		}
 		sessions = append(sessions, s)
 	}
@@ -316,5 +375,8 @@ func FormatRelativeTime(t time.Time) string {
 
 // Close closes the underlying SQL database.
 func (d *DB) Close() error {
-	return d.sqlDB.Close()
+	if err := d.sqlDB.Close(); err != nil {
+		return errors.Wrap(errors.ErrCodeDBCloseFailed, "failed to close database", err)
+	}
+	return nil
 }

@@ -80,3 +80,42 @@ func TestSQLiteDB(t *testing.T) {
 		t.Errorf("DB file %q does not exist", dbPath)
 	}
 }
+
+func TestReplaceSessionGenAIContents(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_replace.db")
+
+	database, err := OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer database.Close()
+
+	sessionID := "test-replace-session"
+	if err := database.SaveMessage(sessionID, "user", "Hello"); err != nil {
+		t.Fatalf("SaveMessage user failed: %v", err)
+	}
+	if err := database.SaveMessage(sessionID, "assistant", "Hi there, long text payload here..."); err != nil {
+		t.Fatalf("SaveMessage assistant failed: %v", err)
+	}
+
+	contents, err := database.GetSessionGenAIContents(sessionID)
+	if err != nil || len(contents) != 2 {
+		t.Fatalf("Initial contents check failed: %v, len=%d", err, len(contents))
+	}
+
+	// Replace with pruned content (1 content item)
+	pruned := contents[1:]
+	if err := database.ReplaceSessionGenAIContents(sessionID, pruned); err != nil {
+		t.Fatalf("ReplaceSessionGenAIContents failed: %v", err)
+	}
+
+	newContents, err := database.GetSessionGenAIContents(sessionID)
+	if err != nil {
+		t.Fatalf("GetSessionGenAIContents after replace failed: %v", err)
+	}
+	if len(newContents) != 1 {
+		t.Fatalf("Expected 1 content item after replace, got %d", len(newContents))
+	}
+}
+

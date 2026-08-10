@@ -18,6 +18,8 @@ import (
 	fagent "flashwhip/pkg/agent"
 	"flashwhip/pkg/agent/middleware"
 	"flashwhip/pkg/config"
+	"flashwhip/pkg/db"
+	"flashwhip/pkg/errors"
 	ollama "flashwhip/pkg/provider/ollama"
 )
 
@@ -45,7 +47,7 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 		AutoCreateSession: true,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to initialize runner: %w", err)
+		return errors.Wrap(errors.ErrCodeRunnerExecutionFailed, "failed to initialize runner", err)
 	}
 
 	homeDir, _ := os.UserHomeDir()
@@ -58,7 +60,7 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 		EOFPrompt:       "exit",
 	})
 	if err != nil {
-		return fmt.Errorf("failed to initialize readline: %w", err)
+		return errors.Wrap(errors.ErrCodeHistorySaveFailed, "failed to initialize readline", err)
 	}
 	defer rl.Close()
 
@@ -123,28 +125,33 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 	return nil
 }
 
-// pruneSessionInMemory retrieves the current session events from sessionSvc,
+// pruneSessionInMemory retrieves the current session events from DB/sessionSvc,
 // adaptively prunes their thought & tool-response payloads via middleware.PruneContentsAdaptive,
-// and rebuilds the session so that future agent turns work with an optimized context.
+// and rebuilds both SQLite and sessionSvc so that future agent turns work with an optimized context.
 // It is a best-effort operation: failures are silently ignored so they never
 // interrupt the user's session.
 func pruneSessionInMemory(ctx context.Context, sessionSvc session.Service, sessionID string, tracker *StreamTracker) {
 	const autoPruneEvery = 10 // prune every N turns
 
-	resp, err := sessionSvc.Get(ctx, &session.GetRequest{
-		AppName:   "flashwhip",
-		UserID:    "user",
-		SessionID: sessionID,
-	})
-	if err != nil {
-		return
+	database, dbErr := db.DefaultDB()
+	var contents []*genai.Content
+
+	if dbErr == nil && database != nil {
+		contents, _ = database.GetSessionGenAIContents(sessionID)
 	}
 
-	// Collect contents from all events.
-	var contents []*genai.Content
-	for ev := range resp.Session.Events().All() {
-		if ev != nil && ev.Content != nil {
-			contents = append(contents, ev.Content)
+	if len(contents) == 0 && sessionSvc != nil {
+		resp, err := sessionSvc.Get(ctx, &session.GetRequest{
+			AppName:   "flashwhip",
+			UserID:    "user",
+			SessionID: sessionID,
+		})
+		if err == nil && resp.Session != nil {
+			for ev := range resp.Session.Events().All() {
+				if ev != nil && ev.Content != nil {
+					contents = append(contents, ev.Content)
+				}
+			}
 		}
 	}
 
@@ -164,29 +171,39 @@ func pruneSessionInMemory(ctx context.Context, sessionSvc session.Service, sessi
 
 	pruned := middleware.PruneContentsAdaptive(contents, pct)
 
-	// Rebuild the session with pruned history.
-	_, crErr := sessionSvc.Create(ctx, &session.CreateRequest{
-		AppName:   "flashwhip",
-		UserID:    "user",
-		SessionID: sessionID,
-	})
-	if crErr != nil {
-		return
+	// 1. Sync pruned history back to SQLite database so token metrics drop immediately
+	if database != nil {
+		_ = database.ReplaceSessionGenAIContents(sessionID, pruned)
 	}
-	for _, c := range pruned {
-		if c == nil {
-			continue
+
+	// 2. Rebuild the in-memory runner session with pruned history
+	if sessionSvc != nil {
+		sessResp, crErr := sessionSvc.Create(ctx, &session.CreateRequest{
+			AppName:   "flashwhip",
+			UserID:    "user",
+			SessionID: sessionID,
+		})
+		if crErr == nil {
+			for _, c := range pruned {
+				if c == nil {
+					continue
+				}
+				ev := &session.Event{
+					Author: c.Role,
+					LLMResponse: adkmodel.LLMResponse{
+						Content: c,
+					},
+				}
+				_ = sessionSvc.AppendEvent(ctx, sessResp.Session, ev)
+			}
 		}
-		ev := &session.Event{
-			Author: c.Role,
-			LLMResponse: adkmodel.LLMResponse{
-				Content: c,
-			},
-		}
-		_ = sessionSvc.AppendEvent(ctx, resp.Session, ev)
 	}
 
 	if pct >= 75.0 {
-		fmt.Printf("\n%s Context saturation (%.1f%%) reached threshold — Auto-compacted history.\n", ToolResultBadge.Render("⚡ [Auto-Compacted Context]:"), pct)
+		newPct := 0.0
+		if tracker != nil {
+			newPct, _, _ = tracker.ContextSaturationPct()
+		}
+		fmt.Printf("\n%s Context saturation (%.1f%% -> %.1f%%) reached threshold — Auto-compacted history.\n", ToolResultBadge.Render("⚡ [Auto-Compacted Context]:"), pct, newPct)
 	}
 }
