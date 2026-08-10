@@ -63,7 +63,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&flagModel, "model", "m", cfg.ModelName, "Model name identifier")
 	rootCmd.PersistentFlags().StringVarP(&flagAPIKey, "api-key", "k", cfg.APIKey, "Optional API key")
 	rootCmd.PersistentFlags().StringVarP(&flagCwd, "cwd", "C", "", "Project root directory to operate in (defaults to current directory)")
-	rootCmd.PersistentFlags().IntVarP(&flagMaxTurns, "max-turns", "t", 25, "Maximum agent turns per prompt (tool-call round-trips); 0 = unlimited")
+	// DO NOT CHANGE: Default max-turns MUST remain 0 (unlimited).
+	rootCmd.PersistentFlags().IntVarP(&flagMaxTurns, "max-turns", "t", 0, "Maximum agent turns per prompt (tool-call round-trips); 0 = unlimited")
 }
 
 func applyFlagsToConfig() *config.Config {
