@@ -1,12 +1,8 @@
 package tools
 
 import (
-	"bytes"
-	"context"
-	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
@@ -50,25 +46,11 @@ func ghPRList(_ agent.Context, in GHPRListInput) (GHPRListOutput, error) {
 		args = append(args, "--base", base)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHPRListOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh pr list failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHPRListOutput{}, err
 	}
 
-	outStr := stdout.String()
 	const maxBytes = 8000
 	if len(outStr) > maxBytes {
 		outStr = outStr[:maxBytes] + "\n... [output truncated for token safety]"
@@ -114,25 +96,11 @@ func ghPRView(_ agent.Context, in GHPRViewInput) (GHPRViewOutput, error) {
 		args = append(args, "--comments")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHPRViewOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh pr view failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHPRViewOutput{}, err
 	}
 
-	outStr := stdout.String()
 	const maxBytes = 8000
 	if len(outStr) > maxBytes {
 		outStr = outStr[:maxBytes] + "\n... [output truncated for token safety]"
@@ -189,27 +157,14 @@ func ghPRCreate(_ agent.Context, in GHPRCreateInput) (GHPRCreateOutput, error) {
 		args = append(args, "--draft")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHPRCreateOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh pr create failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHPRCreateOutput{}, err
 	}
 
 	return GHPRCreateOutput{
 		RepoDir: repoDir,
-		Output:  strings.TrimSpace(stdout.String()),
+		Output:  strings.TrimSpace(outStr),
 	}, nil
 }
 
@@ -248,28 +203,15 @@ func ghPRComment(_ agent.Context, in GHPRCommentInput) (GHPRCommentOutput, error
 
 	args := []string{"pr", "comment", strconv.Itoa(in.PRNumber), "--body", body}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHPRCommentOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh pr comment failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHPRCommentOutput{}, err
 	}
 
 	return GHPRCommentOutput{
 		RepoDir:  repoDir,
 		PRNumber: in.PRNumber,
-		Output:   strings.TrimSpace(stdout.String()),
+		Output:   strings.TrimSpace(outStr),
 	}, nil
 }
 
@@ -307,28 +249,15 @@ func ghPRClose(_ agent.Context, in GHPRCloseInput) (GHPRCloseOutput, error) {
 		args = append(args, "--delete-branch")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHPRCloseOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh pr close failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHPRCloseOutput{}, err
 	}
 
 	return GHPRCloseOutput{
 		RepoDir:  repoDir,
 		PRNumber: in.PRNumber,
-		Output:   strings.TrimSpace(stdout.String()),
+		Output:   strings.TrimSpace(outStr),
 	}, nil
 }
 
@@ -378,28 +307,15 @@ func ghPRMerge(_ agent.Context, in GHPRMergeInput) (GHPRMergeOutput, error) {
 		args = append(args, "--delete-branch")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHPRMergeOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh pr merge failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHPRMergeOutput{}, err
 	}
 
 	return GHPRMergeOutput{
 		RepoDir:  repoDir,
 		PRNumber: in.PRNumber,
-		Output:   strings.TrimSpace(stdout.String()),
+		Output:   strings.TrimSpace(outStr),
 	}, nil
 }
 
@@ -431,25 +347,11 @@ func ghPRDiff(_ agent.Context, in GHPRDiffInput) (GHPRDiffOutput, error) {
 
 	repoDir := resolveRepoDir(in.RepoDir)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", "pr", "diff", strconv.Itoa(in.PRNumber))
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHPRDiffOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh pr diff failed: %s", errStr)
+	outStr, err := runGH(repoDir, "pr", "diff", strconv.Itoa(in.PRNumber))
+	if err != nil {
+		return GHPRDiffOutput{}, err
 	}
 
-	outStr := stdout.String()
 	const maxBytes = 8000
 	if len(outStr) > maxBytes {
 		outStr = outStr[:maxBytes] + "\n... [diff truncated for token safety]"
@@ -490,28 +392,15 @@ func ghPRChecks(_ agent.Context, in GHPRChecksInput) (GHPRChecksOutput, error) {
 
 	repoDir := resolveRepoDir(in.RepoDir)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", "pr", "checks", strconv.Itoa(in.PRNumber))
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHPRChecksOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh pr checks failed: %s", errStr)
+	outStr, err := runGH(repoDir, "pr", "checks", strconv.Itoa(in.PRNumber))
+	if err != nil {
+		return GHPRChecksOutput{}, err
 	}
 
 	return GHPRChecksOutput{
 		RepoDir:  repoDir,
 		PRNumber: in.PRNumber,
-		Output:   strings.TrimSpace(stdout.String()),
+		Output:   strings.TrimSpace(outStr),
 	}, nil
 }
 

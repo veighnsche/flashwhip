@@ -220,29 +220,37 @@ func pruneSessionInMemory(ctx context.Context, sessionSvc session.Service, sessi
 	}
 
 	// 2. Rebuild the in-memory runner session with pruned history
-	if sessionSvc != nil {
-		sessResp, crErr := sessionSvc.Create(ctx, &session.CreateRequest{
-			AppName:   "flashwhip",
-			UserID:    "user",
-			SessionID: sessionID,
-		})
-		if crErr == nil {
-			for _, c := range pruned {
-				if c == nil {
-					continue
-				}
-				ev := &session.Event{
-					Author: c.Role,
-					LLMResponse: adkmodel.LLMResponse{
-						Content: c,
-					},
-				}
-				_ = sessionSvc.AppendEvent(ctx, sessResp.Session, ev)
-			}
-		}
-	}
+	rebuildSessionEvents(ctx, sessionSvc, sessionID, pruned)
 
 	if pct >= 75.0 {
 		fmt.Printf("\n%s Context saturation (%.1f%%) reached threshold — Auto-compacted history.\n", ToolResultBadge.Render("⚡ [Auto-Compacted Context]:"), pct)
+	}
+}
+
+// rebuildSessionEvents replaces a session's in-memory event history with the
+// given GenAI contents (used after pruning or loading). Best-effort: failures
+// are silently ignored.
+func rebuildSessionEvents(ctx context.Context, sessSvc session.Service, sessionID string, contents []*genai.Content) {
+	if sessSvc == nil {
+		return
+	}
+	sessResp, crErr := sessSvc.Create(ctx, &session.CreateRequest{
+		AppName:   "flashwhip",
+		UserID:    "user",
+		SessionID: sessionID,
+	})
+	if crErr != nil || sessResp == nil {
+		return
+	}
+	for _, c := range contents {
+		if c == nil {
+			continue
+		}
+		_ = sessSvc.AppendEvent(ctx, sessResp.Session, &session.Event{
+			Author: c.Role,
+			LLMResponse: adkmodel.LLMResponse{
+				Content: c,
+			},
+		})
 	}
 }

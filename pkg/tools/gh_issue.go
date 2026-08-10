@@ -24,6 +24,29 @@ func resolveRepoDir(dir string) string {
 	return dir
 }
 
+// runGH executes the gh CLI in repoDir with a 30s timeout, returning raw stdout.
+// Errors include the stderr output (or the exit error when none) in the message.
+func runGH(repoDir string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", args...)
+	cmd.Dir = repoDir
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		errStr := strings.TrimSpace(stderr.String())
+		if errStr == "" {
+			errStr = err.Error()
+		}
+		return "", errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh %s %s failed: %s", args[0], args[1], errStr)
+	}
+	return stdout.String(), nil
+}
+
 // GHIssueListInput holds options for listing issues using `gh issue list`.
 type GHIssueListInput struct {
 	RepoDir  string `json:"repo_dir,omitempty" jsonschema:"Optional path to git repository root (defaults to project root)"`
@@ -63,25 +86,11 @@ func ghIssueList(_ agent.Context, in GHIssueListInput) (GHIssueListOutput, error
 		args = append(args, "--label", label)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHIssueListOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh issue list failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHIssueListOutput{}, err
 	}
 
-	outStr := stdout.String()
 	const maxBytes = 8000
 	if len(outStr) > maxBytes {
 		outStr = outStr[:maxBytes] + "\n... [output truncated for token safety]"
@@ -127,25 +136,11 @@ func ghIssueView(_ agent.Context, in GHIssueViewInput) (GHIssueViewOutput, error
 		args = append(args, "--comments")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHIssueViewOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh issue view failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHIssueViewOutput{}, err
 	}
 
-	outStr := stdout.String()
 	const maxBytes = 8000
 	if len(outStr) > maxBytes {
 		outStr = outStr[:maxBytes] + "\n... [output truncated for token safety]"
@@ -202,27 +197,14 @@ func ghIssueCreate(_ agent.Context, in GHIssueCreateInput) (GHIssueCreateOutput,
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHIssueCreateOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh issue create failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHIssueCreateOutput{}, err
 	}
 
 	return GHIssueCreateOutput{
 		RepoDir: repoDir,
-		Output:  strings.TrimSpace(stdout.String()),
+		Output:  strings.TrimSpace(outStr),
 	}, nil
 }
 
@@ -261,28 +243,15 @@ func ghIssueComment(_ agent.Context, in GHIssueCommentInput) (GHIssueCommentOutp
 
 	args := []string{"issue", "comment", strconv.Itoa(in.IssueNumber), "--body", body}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHIssueCommentOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh issue comment failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHIssueCommentOutput{}, err
 	}
 
 	return GHIssueCommentOutput{
 		RepoDir:     repoDir,
 		IssueNumber: in.IssueNumber,
-		Output:      strings.TrimSpace(stdout.String()),
+		Output:      strings.TrimSpace(outStr),
 	}, nil
 }
 
@@ -320,28 +289,15 @@ func ghIssueClose(_ agent.Context, in GHIssueCloseInput) (GHIssueCloseOutput, er
 		args = append(args, "--reason", reason)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		errStr := strings.TrimSpace(stderr.String())
-		if errStr == "" {
-			errStr = err.Error()
-		}
-		return GHIssueCloseOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "gh issue close failed: %s", errStr)
+	outStr, err := runGH(repoDir, args...)
+	if err != nil {
+		return GHIssueCloseOutput{}, err
 	}
 
 	return GHIssueCloseOutput{
 		RepoDir:     repoDir,
 		IssueNumber: in.IssueNumber,
-		Output:      strings.TrimSpace(stdout.String()),
+		Output:      strings.TrimSpace(outStr),
 	}, nil
 }
 

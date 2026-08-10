@@ -130,16 +130,7 @@ func (d *DB) SaveContent(sessionID string, content *genai.Content) error {
 		content.Role = "model"
 	}
 
-	var textParts []string
-	for _, p := range content.Parts {
-		if p.Text != "" && !p.Thought {
-			textParts = append(textParts, p.Text)
-		}
-	}
-	textSummary := strings.Join(textParts, " ")
-	if textSummary == "" && len(content.Parts) > 0 {
-		textSummary = fmt.Sprintf("[%s message]", content.Role)
-	}
+	textSummary := summarizeContent(content)
 
 	jsonBytes, err := json.Marshal(content)
 	jsonPayload := ""
@@ -223,6 +214,25 @@ func (d *DB) SaveMessage(sessionID, role, content string) error {
 	return d.SaveContent(sessionID, c)
 }
 
+// summarizeContent collapses a content's non-thought text parts into a single
+// display string, falling back to a role placeholder when there is no text.
+func summarizeContent(c *genai.Content) string {
+	var textParts []string
+	for _, p := range c.Parts {
+		if p == nil {
+			continue
+		}
+		if p.Text != "" && !p.Thought {
+			textParts = append(textParts, p.Text)
+		}
+	}
+	textSummary := strings.Join(textParts, " ")
+	if textSummary == "" && len(c.Parts) > 0 {
+		textSummary = fmt.Sprintf("[%s message]", c.Role)
+	}
+	return textSummary
+}
+
 // ReplaceSessionGenAIContents replaces stored session messages in SQLite with a pruned content set.
 func (d *DB) ReplaceSessionGenAIContents(sessionID string, contents []*genai.Content) error {
 	d.mu.Lock()
@@ -246,19 +256,7 @@ func (d *DB) ReplaceSessionGenAIContents(sessionID string, contents []*genai.Con
 		if content == nil {
 			continue
 		}
-		var textParts []string
-		for _, p := range content.Parts {
-			if p == nil {
-				continue
-			}
-			if p.Text != "" && !p.Thought {
-				textParts = append(textParts, p.Text)
-			}
-		}
-		textSummary := strings.Join(textParts, " ")
-		if textSummary == "" && len(content.Parts) > 0 {
-			textSummary = fmt.Sprintf("[%s message]", content.Role)
-		}
+		textSummary := summarizeContent(content)
 
 		jsonBytes, err := json.Marshal(content)
 		jsonPayload := ""

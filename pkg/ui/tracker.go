@@ -5,10 +5,23 @@ import (
 	"os"
 	"strings"
 
+	"google.golang.org/genai"
+
 	"flashwhip/pkg/config"
 	"flashwhip/pkg/db"
 	"flashwhip/pkg/provider/ollama"
 )
+
+// contentCharCount returns the total text length in bytes across all content parts.
+func contentCharCount(contents []*genai.Content) int {
+	total := 0
+	for _, c := range contents {
+		for _, p := range c.Parts {
+			total += len(p.Text)
+		}
+	}
+	return total
+}
 
 type StreamState int
 
@@ -71,11 +84,7 @@ func (st *StreamTracker) ContextSaturationPct() (float64, int, int) {
 		if err == nil && st.SessionID != "" {
 			contents, cErr := database.GetSessionGenAIContents(st.SessionID)
 			if cErr == nil {
-				for _, c := range contents {
-					for _, p := range c.Parts {
-						totalChars += len(p.Text)
-					}
-				}
+				totalChars = contentCharCount(contents)
 			}
 		}
 		// Base estimate includes system prompt + tool schemas (~1800 tokens) + history

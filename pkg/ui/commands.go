@@ -8,7 +8,6 @@ import (
 
 	"github.com/chzyer/readline"
 	"google.golang.org/adk/v2/agent"
-	adkmodel "google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
 
@@ -206,23 +205,8 @@ func DefaultRegistry() *CommandRegistry {
 			}
 
 			contents, cErr := database.GetSessionGenAIContents(targetID)
-			if cErr == nil && len(contents) > 0 && ctx.SessionSvc != nil {
-				sessResp, crErr := ctx.SessionSvc.Create(ctx.Ctx, &session.CreateRequest{
-					AppName:   "flashwhip",
-					UserID:    "user",
-					SessionID: targetID,
-				})
-				if crErr == nil && sessResp != nil {
-					for _, gc := range contents {
-						evt := &session.Event{
-							Author: gc.Role,
-							LLMResponse: adkmodel.LLMResponse{
-								Content: gc,
-							},
-						}
-						_ = ctx.SessionSvc.AppendEvent(ctx.Ctx, sessResp.Session, evt)
-					}
-				}
+			if cErr == nil && len(contents) > 0 {
+				rebuildSessionEvents(ctx.Ctx, ctx.SessionSvc, targetID, contents)
 			}
 
 			if ctx.SessionID != nil {
@@ -324,11 +308,7 @@ func DefaultRegistry() *CommandRegistry {
 				contents, cErr := database.GetSessionGenAIContents(sID)
 				if cErr == nil {
 					turnCount = len(contents)
-					for _, c := range contents {
-						for _, p := range c.Parts {
-							totalChars += len(p.Text)
-						}
-					}
+					totalChars = contentCharCount(contents)
 				}
 			}
 
@@ -408,27 +388,7 @@ func DefaultRegistry() *CommandRegistry {
 			pruned := middleware.PruneContents(contents, 1)
 			_ = database.ReplaceSessionGenAIContents(sID, pruned)
 
-			if ctx.SessionSvc != nil {
-				sessResp, crErr := ctx.SessionSvc.Create(ctx.Ctx, &session.CreateRequest{
-					AppName:   "flashwhip",
-					UserID:    "user",
-					SessionID: sID,
-				})
-				if crErr == nil {
-					for _, c := range pruned {
-						if c == nil {
-							continue
-						}
-						evt := &session.Event{
-							Author: c.Role,
-							LLMResponse: adkmodel.LLMResponse{
-								Content: c,
-							},
-						}
-						_ = ctx.SessionSvc.AppendEvent(ctx.Ctx, sessResp.Session, evt)
-					}
-				}
-			}
+			rebuildSessionEvents(ctx.Ctx, ctx.SessionSvc, sID, pruned)
 
 			totalOrigChars := 0
 			for _, c := range contents {
