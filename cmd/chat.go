@@ -5,8 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"flashwhip/pkg/agent"
-	"flashwhip/pkg/errors"
 	"flashwhip/pkg/ui"
 )
 
@@ -19,13 +17,7 @@ var chatCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		activeCfg := applyFlagsToConfig()
-
-		appAgent, err := agent.BuildAgent(ctx, activeCfg)
-		if err != nil {
-			return errors.Wrap(errors.ErrCodeAgentBuildFailed, "failed to build agent", err)
-		}
-
-		return ui.RunInteractiveREPL(ctx, appAgent, activeCfg, flagSession, flagMaxTurns)
+		return ui.RunInteractiveREPL(ctx, activeCfg, flagSession, flagMaxTurns)
 	},
 }
 

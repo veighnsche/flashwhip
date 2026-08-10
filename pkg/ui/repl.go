@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/chzyer/readline"
-	"google.golang.org/adk/v2/agent"
 	adkmodel "google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
@@ -27,14 +26,13 @@ import (
 )
 
 // RunInteractiveREPL launches an interactive multi-turn REPL prompt loop.
-func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.Config, targetSessionID string, maxTurns int) error {
+func RunInteractiveREPL(ctx context.Context, cfg *config.Config, targetSessionID string, maxTurns int) error {
 	fmt.Print(RenderBanner(cfg.ModelName, cfg.BaseURL, cfg.ProjectRoot))
 	fmt.Println()
 
-	var activeModel *ollama.Model
-	if newAgent, modelPtr, aErr := fagent.BuildAgentWithModel(ctx, cfg); aErr == nil {
-		appAgent = newAgent
-		activeModel = modelPtr
+	appAgent, activeModel, err := fagent.BuildAgentWithModel(ctx, cfg)
+	if err != nil {
+		return errors.Wrap(errors.ErrCodeAgentBuildFailed, "failed to build agent", err)
 	}
 
 	sessionID := targetSessionID
