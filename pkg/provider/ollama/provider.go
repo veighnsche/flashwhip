@@ -441,6 +441,19 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 			}
 		}
 
+		if remainingText := state.xmlFilter.Flush(); remainingText != "" {
+			llmResp := &model.LLMResponse{
+				Content: &genai.Content{
+					Role:  "model",
+					Parts: []*genai.Part{{Text: remainingText, Thought: false}},
+				},
+				Partial: true,
+			}
+			if !yield(llmResp, nil) {
+				return
+			}
+		}
+
 		var turnParts []*genai.Part
 
 		if state.Reasoning.Len() > 0 {

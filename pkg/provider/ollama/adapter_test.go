@@ -1,6 +1,7 @@
 package ollama
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -76,5 +77,42 @@ True
 	repoDir, ok := fnCall.Args["repo_dir"].(string)
 	if !ok || repoDir != "/Users/vince/Projects/flashwhip" {
 		t.Errorf("fnCall.Args['repo_dir'] = %v, want '/Users/vince/Projects/flashwhip'", fnCall.Args["repo_dir"])
+	}
+}
+
+func TestXMLStreamFilter(t *testing.T) {
+	filter := NewXMLStreamFilter()
+
+	// Fragmented SSE stream deltas
+	deltas := []string{
+		"I will inspect the file. ",
+		"<too",
+		"l_call>\n<function=read_file>\n<parameter=file_path>go.mod</parameter>\n</function>\n</tool_call>",
+		"\nHere is what I found.",
+	}
+
+	var outputs []string
+	for _, d := range deltas {
+		out := filter.Feed(d)
+		if out != "" {
+			outputs = append(outputs, out)
+		}
+	}
+	if remaining := filter.Flush(); remaining != "" {
+		outputs = append(outputs, remaining)
+	}
+
+	result := strings.Join(outputs, "")
+	expected := "I will inspect the file. \nHere is what I found."
+
+	if result != expected {
+		t.Errorf("XMLStreamFilter result = %q, want %q", result, expected)
+	}
+
+	// Verify <tool_call> tag never leaked into any stream output chunk
+	for _, out := range outputs {
+		if strings.Contains(out, "<tool_call") || strings.Contains(out, "</tool_call>") {
+			t.Errorf("XMLStreamFilter output leaked XML tool call tag: %q", out)
+		}
 	}
 }

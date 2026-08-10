@@ -13,11 +13,97 @@ import (
 	"flashwhip/pkg/agent/middleware"
 )
 
+// XMLStreamFilter filters out <tool_call>...</tool_call> blocks during real-time SSE streaming.
+type XMLStreamFilter struct {
+	buf strings.Builder
+}
+
+func NewXMLStreamFilter() *XMLStreamFilter {
+	return &XMLStreamFilter{}
+}
+
+// Feed receives incoming text delta chunks and returns text parts that are safe to yield immediately.
+func (f *XMLStreamFilter) Feed(deltaText string) string {
+	if deltaText == "" {
+		return ""
+	}
+	f.buf.WriteString(deltaText)
+	return f.process()
+}
+
+func (f *XMLStreamFilter) process() string {
+	s := f.buf.String()
+	if s == "" {
+		return ""
+	}
+
+	var output strings.Builder
+
+	for len(s) > 0 {
+		toolCallIdx := strings.Index(s, "<tool_call")
+		if toolCallIdx == -1 {
+			prefixLen := matchToolCallPrefix(s)
+			if prefixLen > 0 {
+				safeText := s[:len(s)-prefixLen]
+				output.WriteString(safeText)
+				f.buf.Reset()
+				f.buf.WriteString(s[len(s)-prefixLen:])
+				return output.String()
+			}
+
+			output.WriteString(s)
+			f.buf.Reset()
+			return output.String()
+		}
+
+		if toolCallIdx > 0 {
+			output.WriteString(s[:toolCallIdx])
+			s = s[toolCallIdx:]
+		}
+
+		endIdx := strings.Index(s, "</tool_call>")
+		if endIdx != -1 {
+			s = s[endIdx+len("</tool_call>"):]
+		} else {
+			f.buf.Reset()
+			f.buf.WriteString(s)
+			return output.String()
+		}
+	}
+
+	f.buf.Reset()
+	return output.String()
+}
+
+func (f *XMLStreamFilter) Flush() string {
+	s := f.buf.String()
+	f.buf.Reset()
+	if idx := strings.Index(s, "<tool_call"); idx != -1 {
+		return s[:idx]
+	}
+	return s
+}
+
+func matchToolCallPrefix(s string) int {
+	target := "<tool_call"
+	maxCheck := len(target) - 1
+	if len(s) < maxCheck {
+		maxCheck = len(s)
+	}
+	for l := maxCheck; l >= 1; l-- {
+		if strings.HasSuffix(s, target[:l]) {
+			return l
+		}
+	}
+	return 0
+}
+
 // StreamState holds accumulated token state during streaming.
 type StreamState struct {
 	Reasoning strings.Builder
 	Content   strings.Builder
 	ToolCalls map[int]*ToolCallBuilder
+	xmlFilter *XMLStreamFilter
 }
 
 type ToolCallBuilder struct {
@@ -29,6 +115,7 @@ type ToolCallBuilder struct {
 func NewStreamState() *StreamState {
 	return &StreamState{
 		ToolCalls: make(map[int]*ToolCallBuilder),
+		xmlFilter: NewXMLStreamFilter(),
 	}
 }
 
@@ -166,10 +253,13 @@ func (a *OpenAIStandardAdapter) ProcessStreamDelta(delta ChatStreamDelta, state 
 
 	if delta.Content != "" {
 		state.Content.WriteString(delta.Content)
-		parts = append(parts, &genai.Part{
-			Text:    delta.Content,
-			Thought: false,
-		})
+		safeText := state.xmlFilter.Feed(delta.Content)
+		if safeText != "" {
+			parts = append(parts, &genai.Part{
+				Text:    safeText,
+				Thought: false,
+			})
+		}
 	}
 
 	for _, tc := range delta.ToolCalls {
