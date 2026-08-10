@@ -2,13 +2,14 @@ package tools
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"strings"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	"flashwhip/pkg/errors"
 )
 
 const maxReadFileBytes = 20_000
@@ -32,7 +33,7 @@ type ReadFileOutput struct {
 func readFileSnippet(_ agent.Context, args ReadFileArgs) (ReadFileOutput, error) {
 	f, err := os.Open(args.FilePath)
 	if err != nil {
-		return ReadFileOutput{}, fmt.Errorf("failed to open file %q: %w", args.FilePath, err)
+		return ReadFileOutput{}, errors.Wrapf(errors.ErrCodeToolFileNotFound, err, "failed to open file %q", args.FilePath)
 	}
 	defer f.Close()
 
@@ -43,7 +44,7 @@ func readFileSnippet(_ agent.Context, args ReadFileArgs) (ReadFileOutput, error)
 		allLines = append(allLines, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
-		return ReadFileOutput{}, fmt.Errorf("failed to read file %q: %w", args.FilePath, err)
+		return ReadFileOutput{}, errors.Wrapf(errors.ErrCodeToolFileNotFound, err, "failed to read file %q", args.FilePath)
 	}
 
 	totalLines := len(allLines)

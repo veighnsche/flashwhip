@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -9,6 +8,8 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	"flashwhip/pkg/errors"
 )
 
 type FileSearchInput struct {
@@ -25,7 +26,7 @@ type FileSearchOutput struct {
 func searchFiles(_ agent.Context, in FileSearchInput) (FileSearchOutput, error) {
 	pattern := strings.TrimSpace(in.Pattern)
 	if pattern == "" {
-		return FileSearchOutput{}, fmt.Errorf("pattern cannot be empty")
+		return FileSearchOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "pattern cannot be empty")
 	}
 
 	rootDir := in.RootDir
@@ -54,7 +55,7 @@ func searchFiles(_ agent.Context, in FileSearchInput) (FileSearchOutput, error) 
 	})
 
 	if err != nil {
-		return FileSearchOutput{}, fmt.Errorf("file search failed: %w", err)
+		return FileSearchOutput{}, errors.Wrap(errors.ErrCodeToolFileNotFound, "file search failed", err)
 	}
 
 	return FileSearchOutput{

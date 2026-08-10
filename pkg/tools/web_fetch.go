@@ -16,11 +16,12 @@ import (
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
 
+	"flashwhip/pkg/errors"
 	fnet "flashwhip/pkg/net"
 )
 
 type WebFetchInput struct {
-	URL string `json:"url" jsonschema:"The web page HTTP or HTTPS URL to fetch"`
+	URL string `json:"url" jsonschema:"The web page URL to fetch content from"`
 }
 
 type WebFetchOutput struct {
@@ -50,14 +51,14 @@ func fetchWebPage(_ agent.Context, in WebFetchInput) (WebFetchOutput, error) {
 
 	parsedURL, err := nurl.Parse(rawURL)
 	if err != nil {
-		return WebFetchOutput{}, fmt.Errorf("invalid URL %q: %w", rawURL, err)
+		return WebFetchOutput{}, errors.Wrapf(errors.ErrCodeToolInvalidArgs, err, "invalid URL %q", rawURL)
 	}
 
 	client := fnet.DefaultHTTPClient()
 
 	req, err := http.NewRequest("GET", parsedURL.String(), nil)
 	if err != nil {
-		return WebFetchOutput{}, fmt.Errorf("failed to create request: %w", err)
+		return WebFetchOutput{}, errors.Wrap(errors.ErrCodeToolNetworkError, "failed to create request", err)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
@@ -72,7 +73,7 @@ func fetchWebPage(_ agent.Context, in WebFetchInput) (WebFetchOutput, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return WebFetchOutput{}, fmt.Errorf("failed to fetch URL %q: %w", parsedURL.String(), err)
+		return WebFetchOutput{}, errors.Wrapf(errors.ErrCodeToolNetworkError, err, "failed to fetch URL %q", parsedURL.String())
 	}
 	defer resp.Body.Close()
 
@@ -89,7 +90,7 @@ func fetchWebPage(_ agent.Context, in WebFetchInput) (WebFetchOutput, error) {
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return WebFetchOutput{}, fmt.Errorf("failed to read response body: %w", err)
+		return WebFetchOutput{}, errors.Wrap(errors.ErrCodeToolNetworkError, "failed to read response body", err)
 	}
 	bodyBytes, _ = decompressGzip(bodyBytes)
 

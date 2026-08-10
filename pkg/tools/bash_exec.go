@@ -11,6 +11,8 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	"flashwhip/pkg/errors"
 )
 
 type ExecCommandInput struct {
@@ -46,7 +48,7 @@ func isDestructiveCommand(cmd string) bool {
 func executeShellCommand(_ agent.Context, in ExecCommandInput) (ExecCommandOutput, error) {
 	cmdStr := strings.TrimSpace(in.Command)
 	if cmdStr == "" {
-		return ExecCommandOutput{}, fmt.Errorf("command cannot be empty")
+		return ExecCommandOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "command cannot be empty")
 	}
 
 	timeoutSecs := in.TimeoutSeconds

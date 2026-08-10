@@ -2,13 +2,14 @@ package tools
 
 import (
 	"bytes"
-	"fmt"
 	"os/exec"
 	"strings"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	"flashwhip/pkg/errors"
 )
 
 type GitDiffInput struct {
@@ -42,7 +43,7 @@ func gitDiff(_ agent.Context, in GitDiffInput) (GitDiffOutput, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return GitDiffOutput{}, fmt.Errorf("git diff failed: %w — %s", err, strings.TrimSpace(stderr.String()))
+		return GitDiffOutput{}, errors.Wrapf(errors.ErrCodeToolExecFailed, err, "git diff failed — %s", strings.TrimSpace(stderr.String()))
 	}
 
 	diff := stdout.String()

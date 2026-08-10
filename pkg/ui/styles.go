@@ -16,6 +16,8 @@ var (
 			Background(PrimaryColor).
 			Padding(0, 1)
 
+	Bold = lipgloss.NewStyle().Bold(true)
+
 	BannerStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(PrimaryColor).

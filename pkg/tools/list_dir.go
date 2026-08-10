@@ -1,12 +1,13 @@
 package tools
 
 import (
-	"fmt"
 	"os"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	"flashwhip/pkg/errors"
 )
 
 type ListDirInput struct {
@@ -33,7 +34,7 @@ func listDirectoryContents(_ agent.Context, in ListDirInput) (ListDirOutput, err
 
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
-		return ListDirOutput{}, fmt.Errorf("failed to list directory %q: %w", dirPath, err)
+		return ListDirOutput{}, errors.Wrapf(errors.ErrCodeToolFileNotFound, err, "failed to list directory %q", dirPath)
 	}
 
 	var results []DirEntryInfo

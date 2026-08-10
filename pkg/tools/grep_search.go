@@ -2,7 +2,6 @@ package tools
 
 import (
 	"bufio"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,6 +10,8 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	"flashwhip/pkg/errors"
 )
 
 type GrepSearchInput struct {
@@ -34,7 +35,7 @@ type GrepSearchOutput struct {
 func grepSearchCodebase(_ agent.Context, in GrepSearchInput) (GrepSearchOutput, error) {
 	query := strings.TrimSpace(in.Query)
 	if query == "" {
-		return GrepSearchOutput{}, fmt.Errorf("query cannot be empty")
+		return GrepSearchOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "query cannot be empty")
 	}
 
 	rootDir := in.RootDir
@@ -96,7 +97,7 @@ func grepSearchCodebase(_ agent.Context, in GrepSearchInput) (GrepSearchOutput, 
 	})
 
 	if err != nil && err != filepath.SkipAll {
-		return GrepSearchOutput{}, fmt.Errorf("grep search failed: %w", err)
+		return GrepSearchOutput{}, errors.Wrap(errors.ErrCodeToolFileNotFound, "grep search failed", err)
 	}
 
 	return GrepSearchOutput{

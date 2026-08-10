@@ -9,6 +9,8 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	"flashwhip/pkg/errors"
 )
 
 type WriteFileInput struct {
@@ -25,19 +27,19 @@ type WriteFileOutput struct {
 func writeFileContents(_ agent.Context, in WriteFileInput) (WriteFileOutput, error) {
 	path := strings.TrimSpace(in.FilePath)
 	if path == "" {
-		return WriteFileOutput{}, fmt.Errorf("file_path cannot be empty")
+		return WriteFileOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "file_path cannot be empty")
 	}
 
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return WriteFileOutput{}, fmt.Errorf("failed to create directory %q: %w", dir, err)
+			return WriteFileOutput{}, errors.Wrapf(errors.ErrCodeToolPermissionDenied, err, "failed to create directory %q", dir)
 		}
 	}
 
 	data := []byte(in.Content)
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return WriteFileOutput{}, fmt.Errorf("failed to write file %q: %w", path, err)
+		return WriteFileOutput{}, errors.Wrapf(errors.ErrCodeToolPermissionDenied, err, "failed to write file %q", path)
 	}
 
 	return WriteFileOutput{

@@ -11,6 +11,7 @@ import (
 
 	"flashwhip/pkg/agent"
 	"flashwhip/pkg/config"
+	"flashwhip/pkg/errors"
 	"flashwhip/pkg/ui"
 )
 
@@ -40,7 +41,7 @@ It connects to Ollama endpoints (or OpenAI-compatible hosts) to execute single-s
 
 		appAgent, err := agent.BuildAgent(ctx, activeCfg)
 		if err != nil {
-			return fmt.Errorf("failed to build agent: %w", err)
+			return errors.Wrap(errors.ErrCodeAgentBuildFailed, "failed to build agent", err)
 		}
 
 		prompt := strings.Join(args, " ")
@@ -79,11 +80,11 @@ func applyFlagsToConfig() *config.Config {
 	if flagCwd != "" {
 		abs, err := filepath.Abs(flagCwd)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: invalid --cwd path %q: %v\n", flagCwd, err)
+			fmt.Fprintf(os.Stderr, "%v\n", errors.Wrapf(errors.ErrCodeConfigInvalid, err, "invalid --cwd path %q", flagCwd))
 			os.Exit(1)
 		}
 		if err := os.Chdir(abs); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: cannot change to directory %q: %v\n", abs, err)
+			fmt.Fprintf(os.Stderr, "%v\n", errors.Wrapf(errors.ErrCodeDirChangeFailed, err, "cannot change to directory %q", abs))
 			os.Exit(1)
 		}
 		c.ProjectRoot = abs

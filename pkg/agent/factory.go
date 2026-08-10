@@ -2,12 +2,12 @@ package agent
 
 import (
 	"context"
-	"fmt"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
 
 	"flashwhip/pkg/config"
+	"flashwhip/pkg/errors"
 	"flashwhip/pkg/provider/ollama"
 	"flashwhip/pkg/tools"
 )
@@ -16,12 +16,12 @@ import (
 func BuildAgentWithModel(ctx context.Context, cfg *config.Config) (agent.Agent, *ollama.Model, error) {
 	model, err := ollama.NewModel(cfg.ModelName, cfg.BaseURL, cfg.APIKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize Ollama model provider (%s): %w", cfg.BaseURL, err)
+		return nil, nil, errors.Wrapf(errors.ErrCodeProviderInitFailed, err, "failed to initialize Ollama model provider (%s)", cfg.BaseURL)
 	}
 
 	defaultTools, err := tools.DefaultTools()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load default tools: %w", err)
+		return nil, nil, errors.Wrap(errors.ErrCodeToolInitFailed, "failed to load default tools", err)
 	}
 
 	// Inject live project context (cwd, directory layout, coding rules) into the
@@ -36,7 +36,7 @@ func BuildAgentWithModel(ctx context.Context, cfg *config.Config) (agent.Agent, 
 		Tools:       defaultTools,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create llmagent: %w", err)
+		return nil, nil, errors.Wrap(errors.ErrCodeAgentBuildFailed, "failed to create llmagent", err)
 	}
 
 	return a, model, nil

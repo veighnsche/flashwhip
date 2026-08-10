@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -12,10 +11,11 @@ import (
 	"google.golang.org/genai"
 
 	"flashwhip/pkg/db"
+	ferrs "flashwhip/pkg/errors"
 )
 
 // ErrMaxTurnsReached is returned when the agent exceeds the configured turn limit.
-var ErrMaxTurnsReached = errors.New("max turns reached")
+var ErrMaxTurnsReached = ferrs.ErrMaxTurnsReached
 
 // ExecuteStreamLoop runs the streaming event loop for a given prompt session and updates the UI stream tracker.
 // Text tokens are buffered and rendered through glamour markdown at the end of each turn for clean output.
@@ -29,7 +29,7 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 
 	for ev, err := range r.Run(ctx, "user", sessionID, userMsg, agent.RunConfig{StreamingMode: agent.StreamingModeSSE}) {
 		if err != nil {
-			return err
+			return ferrs.Wrap(ferrs.ErrCodeRunnerExecutionFailed, "runner stream error", err)
 		}
 		if ev == nil {
 			continue

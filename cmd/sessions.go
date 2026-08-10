@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"flashwhip/pkg/db"
+	"flashwhip/pkg/errors"
 	"flashwhip/pkg/ui"
 )
 
@@ -17,12 +18,12 @@ var sessionsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		database, err := db.DefaultDB()
 		if err != nil {
-			return fmt.Errorf("failed to open database: %w", err)
+			return errors.Wrap(errors.ErrCodeDBOpenFailed, "failed to open database", err)
 		}
 
 		sessions, err := database.ListSessions()
 		if err != nil {
-			return fmt.Errorf("failed to list sessions: %w", err)
+			return errors.Wrap(errors.ErrCodeDBQueryFailed, "failed to list sessions", err)
 		}
 
 		fmt.Println(ui.RenderSessionList(sessions))

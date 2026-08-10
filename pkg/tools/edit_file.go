@@ -8,6 +8,8 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	"flashwhip/pkg/errors"
 )
 
 type EditFileInput struct {
@@ -26,12 +28,12 @@ type EditFileOutput struct {
 func editFileContents(_ agent.Context, in EditFileInput) (EditFileOutput, error) {
 	path := strings.TrimSpace(in.FilePath)
 	if path == "" {
-		return EditFileOutput{}, fmt.Errorf("file_path cannot be empty")
+		return EditFileOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "file_path cannot be empty")
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return EditFileOutput{}, fmt.Errorf("failed to read file %q: %w", path, err)
+		return EditFileOutput{}, errors.Wrapf(errors.ErrCodeToolFileNotFound, err, "failed to read file %q", path)
 	}
 
 	original := string(data)
@@ -57,7 +59,7 @@ func editFileContents(_ agent.Context, in EditFileInput) (EditFileOutput, error)
 
 	updated := strings.Replace(original, in.TargetContent, in.ReplacementContent, 1)
 	if err := os.WriteFile(path, []byte(updated), 0644); err != nil {
-		return EditFileOutput{}, fmt.Errorf("failed to save edited file %q: %w", path, err)
+		return EditFileOutput{}, errors.Wrapf(errors.ErrCodeToolPermissionDenied, err, "failed to save edited file %q", path)
 	}
 
 	return EditFileOutput{

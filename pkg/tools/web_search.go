@@ -14,11 +14,12 @@ import (
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
 
+	"flashwhip/pkg/errors"
 	fnet "flashwhip/pkg/net"
 )
 
 type WebSearchInput struct {
-	Query string `json:"query" jsonschema:"Search terms or question"`
+	Query string `json:"query" jsonschema:"The web search query"`
 }
 
 type SearchResultItem struct {
@@ -36,7 +37,7 @@ type WebSearchOutput struct {
 func performWebSearch(_ agent.Context, in WebSearchInput) (WebSearchOutput, error) {
 	query := strings.TrimSpace(in.Query)
 	if query == "" {
-		return WebSearchOutput{}, fmt.Errorf("search query cannot be empty")
+		return WebSearchOutput{}, errors.New(errors.ErrCodeToolInvalidArgs, "search query cannot be empty")
 	}
 
 	searchURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
@@ -45,7 +46,7 @@ func performWebSearch(_ agent.Context, in WebSearchInput) (WebSearchOutput, erro
 
 	req, err := http.NewRequest("POST", searchURL, strings.NewReader("q="+url.QueryEscape(query)))
 	if err != nil {
-		return WebSearchOutput{}, fmt.Errorf("failed to create search request: %w", err)
+		return WebSearchOutput{}, errors.Wrap(errors.ErrCodeToolNetworkError, "failed to create search request", err)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -54,13 +55,13 @@ func performWebSearch(_ agent.Context, in WebSearchInput) (WebSearchOutput, erro
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return WebSearchOutput{}, fmt.Errorf("search HTTP request failed: %w", err)
+		return WebSearchOutput{}, errors.Wrap(errors.ErrCodeToolNetworkError, "search HTTP request failed", err)
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return WebSearchOutput{}, fmt.Errorf("failed to read search response body: %w", err)
+		return WebSearchOutput{}, errors.Wrap(errors.ErrCodeToolNetworkError, "failed to read search response body", err)
 	}
 
 	instantAnswer, results := parseDuckDuckGoHTML(bodyBytes)

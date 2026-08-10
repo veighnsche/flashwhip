@@ -18,6 +18,7 @@ import (
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
 
+	"flashwhip/pkg/errors"
 	fnet "flashwhip/pkg/net"
 )
 
@@ -33,7 +34,7 @@ type Model struct {
 
 func NewModel(modelName, baseURL, apiKey string) (*Model, error) {
 	if modelName == "" {
-		return nil, fmt.Errorf("modelName cannot be empty")
+		return nil, errors.New(errors.ErrCodeProviderEmptyModel, "modelName cannot be empty")
 	}
 	if baseURL == "" {
 		baseURL = "https://ollama.dimensionlab.net/v1"
@@ -90,7 +91,7 @@ func FetchAvailableModels(baseURL, apiKey string) ([]string, error) {
 
 	req, err := http.NewRequest("GET", modelsURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, errors.Wrap(errors.ErrCodeModelFetchFailed, "failed to create request", err)
 	}
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
@@ -98,18 +99,18 @@ func FetchAvailableModels(baseURL, apiKey string) ([]string, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to model endpoint %q: %w", modelsURL, err)
+		return nil, errors.Wrapf(errors.ErrCodeModelFetchFailed, err, "failed to connect to model endpoint %q", modelsURL)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, errors.Errorf(errors.ErrCodeModelFetchFailed, "endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var listResp ModelListResponse
 	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
-		return nil, fmt.Errorf("failed to decode models response: %w", err)
+		return nil, errors.Wrap(errors.ErrCodeModelFetchFailed, "failed to decode models response", err)
 	}
 
 	var modelNames []string
@@ -138,7 +139,7 @@ func FetchAvailableModels(baseURL, apiKey string) ([]string, error) {
 	}
 
 	if len(modelNames) == 0 {
-		return nil, fmt.Errorf("no models returned from endpoint")
+		return nil, errors.New(errors.ErrCodeProviderNoModelsFound, "no models returned from endpoint")
 	}
 
 	return modelNames, nil
@@ -183,7 +184,7 @@ func FetchModelContextLength(baseURL, apiKey, modelName string) (int, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 32768, fmt.Errorf("show endpoint returned status %d", resp.StatusCode)
+		return 32768, errors.Errorf(errors.ErrCodeProviderHTTPStatus, "show endpoint returned status %d", resp.StatusCode)
 	}
 
 	var showResp ShowModelResponse
@@ -240,7 +241,7 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 	return func(yield func(*model.LLMResponse, error) bool) {
 		messages, err := m.adapter.BuildMessages(req)
 		if err != nil {
-			yield(nil, fmt.Errorf("failed to build messages: %w", err))
+			yield(nil, errors.Wrap(errors.ErrCodeProviderMessageBuildFailed, "failed to build messages", err))
 			return
 		}
 
@@ -290,7 +291,7 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 
 		bodyBytes, err := json.Marshal(payload)
 		if err != nil {
-			yield(nil, fmt.Errorf("failed to marshal chat request: %w", err))
+			yield(nil, errors.Wrap(errors.ErrCodeProviderMarshalFailed, "failed to marshal chat request", err))
 			return
 		}
 
@@ -301,7 +302,7 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 		url := m.baseURL + "/chat/completions"
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
 		if err != nil {
-			yield(nil, fmt.Errorf("failed to create http request: %w", err))
+			yield(nil, errors.Wrap(errors.ErrCodeNetHTTPClientFailed, "failed to create http request", err))
 			return
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -311,28 +312,28 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 
 		resp, err := m.client.Do(httpReq)
 		if err != nil {
-			yield(nil, fmt.Errorf("http request failed: %w", err))
+			yield(nil, errors.Wrap(errors.ErrCodeProviderRequestFailed, "http request failed", err))
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			respBytes, _ := io.ReadAll(resp.Body)
-			yield(nil, fmt.Errorf("Ollama API returned status %d: %s", resp.StatusCode, string(respBytes)))
+			yield(nil, errors.Errorf(errors.ErrCodeProviderHTTPStatus, "Ollama API returned status %d: %s", resp.StatusCode, string(respBytes)))
 			return
 		}
 
 		if !stream {
 			var chatResp ChatResponse
 			if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-				yield(nil, fmt.Errorf("failed to decode chat response: %w", err))
+				yield(nil, errors.Wrap(errors.ErrCodeProviderResponseDecodeFailed, "failed to decode chat response", err))
 				return
 			}
 			if chatResp.Usage != nil {
 				m.usage.Record(chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTok, chatResp.Usage.TotalTokens)
 			}
 			if len(chatResp.Choices) == 0 {
-				yield(nil, fmt.Errorf("empty choices in chat response"))
+				yield(nil, errors.New(errors.ErrCodeProviderEmptyResponse, "empty choices in chat response"))
 				return
 			}
 
@@ -387,7 +388,7 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 				if err == io.EOF {
 					break
 				}
-				yield(nil, fmt.Errorf("error reading stream line: %w", err))
+				yield(nil, errors.Wrap(errors.ErrCodeStreamReadFailed, "error reading stream line", err))
 				return
 			}
 
