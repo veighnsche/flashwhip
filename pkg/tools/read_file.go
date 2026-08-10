@@ -20,6 +20,7 @@ type ReadFileArgs struct {
 }
 
 type ReadFileOutput struct {
+	FilePath   string `json:"file_path"`
 	Content    string `json:"content"`
 	Bytes      int    `json:"bytes"`
 	TotalLines int    `json:"total_lines"`
@@ -65,6 +66,7 @@ func readFileSnippet(_ agent.Context, args ReadFileArgs) (ReadFileOutput, error)
 	}
 	if start > end {
 		return ReadFileOutput{
+			FilePath:   args.FilePath,
 			TotalLines: totalLines,
 			StartLine:  start,
 			EndLine:    end,
@@ -81,6 +83,7 @@ func readFileSnippet(_ agent.Context, args ReadFileArgs) (ReadFileOutput, error)
 	}
 
 	return ReadFileOutput{
+		FilePath:   args.FilePath,
 		Content:    content,
 		Bytes:      len(content),
 		TotalLines: totalLines,

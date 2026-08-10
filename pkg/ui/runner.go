@@ -24,6 +24,8 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 	var assistantParts []*genai.Part
 	var textBuf strings.Builder
 	completedTurns := 0
+	pendingCalls := make(map[string]map[string]any)
+	var lastPrintedToolLine string
 
 	for ev, err := range r.Run(ctx, "user", sessionID, userMsg, agent.RunConfig{StreamingMode: agent.StreamingModeSSE}) {
 		if err != nil {
@@ -45,33 +47,39 @@ func ExecuteStreamLoop(ctx context.Context, r *runner.Runner, sessionID string, 
 
 		if ev.Content != nil {
 			for _, part := range ev.Content.Parts {
-				if ev.Partial {
-					if part.Text != "" {
-						if part.Thought {
-							// Thinking tokens: print immediately, no buffering.
-							tracker.TransitionToThinking()
-							fmt.Print(ThinkingBadge.Render(part.Text))
-							_ = os.Stdout.Sync()
-						} else {
-							// Regular text: buffer silently; will be glamour-rendered at end of turn.
-							tracker.TransitionToOutputting()
-							textBuf.WriteString(part.Text)
-							assistantParts = append(assistantParts, part)
-						}
-					}
-
-					if part.FunctionCall != nil {
-						tracker.TransitionToIdle()
-						fmt.Printf("\n%s %s(%v)\n", ToolCallBadge.Render("⚡ [Tool Executing]:"), part.FunctionCall.Name, part.FunctionCall.Args)
+				if part.Text != "" && ev.Partial {
+					if part.Thought {
+						// Thinking tokens: print immediately, no buffering.
+						tracker.TransitionToThinking()
+						fmt.Print(ThinkingBadge.Render(part.Text))
 						_ = os.Stdout.Sync()
+					} else {
+						// Regular text: buffer silently; will be glamour-rendered at end of turn.
+						tracker.TransitionToOutputting()
+						textBuf.WriteString(part.Text)
 						assistantParts = append(assistantParts, part)
 					}
 				}
 
+				if part.FunctionCall != nil {
+					tracker.TransitionToIdle()
+					if part.FunctionCall.Args != nil {
+						pendingCalls[part.FunctionCall.Name] = part.FunctionCall.Args
+					}
+					assistantParts = append(assistantParts, part)
+				}
+
 				if part.FunctionResponse != nil {
 					tracker.TransitionToIdle()
-					fmt.Printf("\n%s %s\n", ToolResultBadge.Render("✔ [Tool Result]:"), part.FunctionResponse.Name)
-					_ = os.Stdout.Sync()
+					args := pendingCalls[part.FunctionResponse.Name]
+					cwd, _ := os.Getwd()
+					line := RenderCombinedToolExecution(part.FunctionResponse.Name, args, part.FunctionResponse.Response, cwd)
+					if line != "" && line != lastPrintedToolLine {
+						fmt.Printf("%s\n", line)
+						_ = os.Stdout.Sync()
+						lastPrintedToolLine = line
+					}
+					delete(pendingCalls, part.FunctionResponse.Name)
 				}
 			}
 		}

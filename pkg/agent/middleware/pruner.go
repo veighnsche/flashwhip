@@ -13,11 +13,39 @@ const (
 	MaxHistoricalToolOutputBytes = 200
 )
 
-// PruneContents optimizes req.Contents to protect context window & GPU VRAM:
-// 1. Caps any single immediate tool response exceeding 2,000 bytes.
-// 2. Compacts historical thought blocks (Thought == true) older than maxHistoryTurns.
-// 3. Summarizes tool outputs older than maxHistoryTurns down to 200 bytes.
+// PruneContents optimizes req.Contents to protect context window & GPU VRAM
+// using default turn and size thresholds.
 func PruneContents(contents []*genai.Content, maxHistoryTurns int) []*genai.Content {
+	return PruneContentsWithLimits(contents, maxHistoryTurns, MaxHistoricalToolOutputBytes, MaxSingleToolOutputBytes)
+}
+
+// PruneContentsAdaptive dynamically selects pruning thresholds based on context saturation percentage.
+func PruneContentsAdaptive(contents []*genai.Content, contextPct float64) []*genai.Content {
+	var maxHistoryTurns, historicalToolBytes, singleToolBytes int
+
+	switch {
+	case contextPct >= 90.0:
+		// Emergency Compaction: Keep only 1 recent turn, truncate historical tools to 75B
+		maxHistoryTurns = 1
+		historicalToolBytes = 75
+		singleToolBytes = 1000
+	case contextPct >= 75.0:
+		// Soft Compaction: Keep last 2 turns intact, truncate historical tools to 150B
+		maxHistoryTurns = 2
+		historicalToolBytes = 150
+		singleToolBytes = 1500
+	default:
+		// Standard Pruning: Keep last 5 turns intact
+		maxHistoryTurns = 5
+		historicalToolBytes = MaxHistoricalToolOutputBytes
+		singleToolBytes = MaxSingleToolOutputBytes
+	}
+
+	return PruneContentsWithLimits(contents, maxHistoryTurns, historicalToolBytes, singleToolBytes)
+}
+
+// PruneContentsWithLimits optimizes req.Contents with explicit max turns and byte bounds.
+func PruneContentsWithLimits(contents []*genai.Content, maxHistoryTurns int, historicalToolBytes int, singleToolBytes int) []*genai.Content {
 	if len(contents) == 0 {
 		return contents
 	}
@@ -53,9 +81,9 @@ func PruneContents(contents []*genai.Content, maxHistoryTurns int) []*genai.Cont
 
 			// Handle FunctionResponse pruning & capping
 			if p.FunctionResponse != nil {
-				maxBytes := MaxSingleToolOutputBytes
+				maxBytes := singleToolBytes
 				if isHistorical {
-					maxBytes = MaxHistoricalToolOutputBytes
+					maxBytes = historicalToolBytes
 				}
 				newResp := pruneFunctionResponse(p.FunctionResponse, maxBytes)
 				newParts = append(newParts, &genai.Part{
@@ -87,11 +115,25 @@ func pruneFunctionResponse(fr *genai.FunctionResponse, maxBytes int) *genai.Func
 
 	safeStr := strings.ToValidUTF8(string(respBytes), "")
 	runes := []rune(safeStr)
-	if len(runes) > maxBytes {
-		safeStr = string(runes[:maxBytes])
+	if len(runes) <= maxBytes {
+		return fr
 	}
 
-	summary := fmt.Sprintf("%s... [truncated for context safety]", safeStr)
+	// Head + Tail Preservation Strategy (60% Head, 40% Tail)
+	headLen := (maxBytes * 60) / 100
+	if headLen < 10 {
+		headLen = 10
+	}
+	tailLen := maxBytes - headLen
+	if tailLen < 5 {
+		tailLen = 5
+	}
+
+	headStr := string(runes[:headLen])
+	tailStr := string(runes[len(runes)-tailLen:])
+	omittedBytes := len(safeStr) - (headLen + tailLen)
+
+	summary := fmt.Sprintf("%s\n... [%d bytes omitted for context safety] ...\n%s", headStr, omittedBytes, tailStr)
 	return &genai.FunctionResponse{
 		Name: fr.Name,
 		Response: map[string]any{
@@ -99,3 +141,4 @@ func pruneFunctionResponse(fr *genai.FunctionResponse, maxBytes int) *genai.Func
 		},
 	}
 }
+

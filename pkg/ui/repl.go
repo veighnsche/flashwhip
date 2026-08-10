@@ -113,9 +113,9 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 			fmt.Printf("\n\033[31m[Error]: %v\033[0m\n", err)
 		}
 
-		// Auto-prune: every 10 turns compact the in-memory session history to
-		// prevent context window exhaustion on long sessions.
-		pruneSessionInMemory(ctx, sessionSvc, sessionID)
+		// Auto-prune: adaptively compact in-memory session history when history is long
+		// or context saturation exceeds 75% threshold.
+		pruneSessionInMemory(ctx, sessionSvc, sessionID, tracker)
 
 		fmt.Println()
 	}
@@ -124,11 +124,11 @@ func RunInteractiveREPL(ctx context.Context, appAgent agent.Agent, cfg *config.C
 }
 
 // pruneSessionInMemory retrieves the current session events from sessionSvc,
-// prunes their tool-response payloads via middleware.PruneContents, and
-// rebuilds the session so that the next agent turn works with a compacted history.
+// adaptively prunes their thought & tool-response payloads via middleware.PruneContentsAdaptive,
+// and rebuilds the session so that future agent turns work with an optimized context.
 // It is a best-effort operation: failures are silently ignored so they never
 // interrupt the user's session.
-func pruneSessionInMemory(ctx context.Context, sessionSvc session.Service, sessionID string) {
+func pruneSessionInMemory(ctx context.Context, sessionSvc session.Service, sessionID string, tracker *StreamTracker) {
 	const autoPruneEvery = 10 // prune every N turns
 
 	resp, err := sessionSvc.Get(ctx, &session.GetRequest{
@@ -148,11 +148,21 @@ func pruneSessionInMemory(ctx context.Context, sessionSvc session.Service, sessi
 		}
 	}
 
-	if len(contents) < autoPruneEvery*2 {
-		return // not enough history to warrant pruning yet
+	if len(contents) == 0 {
+		return
 	}
 
-	pruned := middleware.PruneContents(contents, autoPruneEvery)
+	pct := 0.0
+	if tracker != nil {
+		pct, _, _ = tracker.ContextSaturationPct()
+	}
+
+	// Trigger auto-compaction if context usage reaches 75%+ or history reaches turn limit
+	if pct < 75.0 && len(contents) < autoPruneEvery*2 {
+		return
+	}
+
+	pruned := middleware.PruneContentsAdaptive(contents, pct)
 
 	// Rebuild the session with pruned history.
 	_, crErr := sessionSvc.Create(ctx, &session.CreateRequest{
@@ -174,5 +184,9 @@ func pruneSessionInMemory(ctx context.Context, sessionSvc session.Service, sessi
 			},
 		}
 		_ = sessionSvc.AppendEvent(ctx, resp.Session, ev)
+	}
+
+	if pct >= 75.0 {
+		fmt.Printf("\n%s Context saturation (%.1f%%) reached threshold — Auto-compacted history.\n", ToolResultBadge.Render("⚡ [Auto-Compacted Context]:"), pct)
 	}
 }

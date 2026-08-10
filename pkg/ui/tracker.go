@@ -47,8 +47,8 @@ func NewStreamTrackerWithConfig(sessionID string, cfg *config.Config, usage *oll
 	return st
 }
 
-// RenderUsageBar builds a visual token usage progress bar string and saturation alerts.
-func (st *StreamTracker) RenderUsageBar() string {
+// ContextSaturationPct calculates current context saturation percentage, used tokens, and max context tokens.
+func (st *StreamTracker) ContextSaturationPct() (float64, int, int) {
 	ctxLen, _ := ollama.FetchModelContextLength(st.BaseURL, st.APIKey, st.ModelName)
 	if ctxLen <= 0 {
 		ctxLen = 32768
@@ -87,6 +87,13 @@ func (st *StreamTracker) RenderUsageBar() string {
 		pct = 100
 	}
 
+	return pct, tokens, ctxLen
+}
+
+// RenderUsageBar builds a visual token usage progress bar string and saturation alerts.
+func (st *StreamTracker) RenderUsageBar() string {
+	pct, tokens, ctxLen := st.ContextSaturationPct()
+
 	barWidth := 15
 	filled := int((pct / 100.0) * float64(barWidth))
 	if filled > barWidth {
@@ -96,9 +103,9 @@ func (st *StreamTracker) RenderUsageBar() string {
 
 	var alertStr string
 	if pct >= 90.0 {
-		alertStr = fmt.Sprintf(" 🚨 [Context Almost Full (%.1f%%) — Run /compact]", pct)
+		alertStr = fmt.Sprintf(" 🚨 [Context Almost Full (%.1f%%) — Auto-Compacting]", pct)
 	} else if pct >= 75.0 {
-		alertStr = fmt.Sprintf(" ⚠️ [Context Filling Up (%.1f%%)]", pct)
+		alertStr = fmt.Sprintf(" ⚠️ [Context Filling Up (%.1f%%) — Auto-Compacting]", pct)
 	}
 
 	return fmt.Sprintf("[%s] %.1f%% (%d/%d tokens)%s", bar, pct, tokens, ctxLen, alertStr)

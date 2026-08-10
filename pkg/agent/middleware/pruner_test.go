@@ -51,12 +51,12 @@ func TestPruneContents(t *testing.T) {
 		}
 	}
 
-	// 2. Verify historical tool response in index 1 was summarized to <= 200 bytes
+	// 2. Verify historical tool response in index 1 was summarized to <= 200 bytes with head+tail preservation
 	for _, p := range pruned[1].Parts {
 		if p.FunctionResponse != nil {
 			summary, ok := p.FunctionResponse.Response["summary"].(string)
-			if !ok || !strings.Contains(summary, "truncated") {
-				t.Errorf("Expected truncated summary, got %v", p.FunctionResponse.Response)
+			if !ok || !strings.Contains(summary, "omitted for context safety") {
+				t.Errorf("Expected head+tail summary, got %v", p.FunctionResponse.Response)
 			}
 		}
 	}
@@ -82,3 +82,44 @@ func TestPruneContents(t *testing.T) {
 		}
 	}
 }
+
+func TestPruneContentsAdaptive(t *testing.T) {
+	contents := []*genai.Content{
+		{Role: "user", Parts: []*genai.Part{{Text: "Prompt 1"}}},
+		{Role: "model", Parts: []*genai.Part{
+			{Text: "Thought 1", Thought: true},
+			{FunctionResponse: &genai.FunctionResponse{Name: "cmd", Response: map[string]any{"res": strings.Repeat("X", 500)}}},
+		}},
+		{Role: "user", Parts: []*genai.Part{{Text: "Prompt 2"}}},
+		{Role: "model", Parts: []*genai.Part{
+			{Text: "Thought 2", Thought: true},
+			{FunctionResponse: &genai.FunctionResponse{Name: "cmd", Response: map[string]any{"res": strings.Repeat("Y", 500)}}},
+		}},
+		{Role: "user", Parts: []*genai.Part{{Text: "Prompt 3"}}},
+		{Role: "model", Parts: []*genai.Part{
+			{Text: "Thought 3", Thought: true},
+		}},
+	}
+
+	// Test Emergency Compaction (95% saturation) -> maxHistoryTurns = 1
+	emergencyPruned := PruneContentsAdaptive(contents, 95.0)
+	// Index 1 (turn 1) thought should be stripped
+	for _, p := range emergencyPruned[1].Parts {
+		if p.Thought {
+			t.Errorf("Emergency pruning failed: historical thought in turn 1 not stripped")
+		}
+	}
+
+	// Test Normal Pruning (50% saturation) -> maxHistoryTurns = 5 (all intact)
+	normalPruned := PruneContentsAdaptive(contents, 50.0)
+	foundTurn1Thought := false
+	for _, p := range normalPruned[1].Parts {
+		if p.Thought {
+			foundTurn1Thought = true
+		}
+	}
+	if !foundTurn1Thought {
+		t.Errorf("Normal pruning stripped thought block when saturation was only 50%%")
+	}
+}
+
