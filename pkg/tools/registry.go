@@ -8,11 +8,6 @@ import (
 
 // DefaultTools returns the standard set of built-in function tools for Flashwhip.
 func DefaultTools() ([]tool.Tool, error) {
-	sysTool, err := SystemInfoTool()
-	if err != nil {
-		return nil, errors.Wrap(errors.ErrCodeToolInitFailed, "failed to initialize sysTool", err)
-	}
-
 	fileTool, err := ReadFileTool()
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrCodeToolInitFailed, "failed to initialize fileTool", err)
@@ -129,7 +124,6 @@ func DefaultTools() ([]tool.Tool, error) {
 	}
 
 	return []tool.Tool{
-		sysTool,
 		fileTool,
 		writeTool,
 		editTool,

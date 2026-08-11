@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -39,6 +41,13 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 	}
 }
 
+func TestBuildProjectContextIncludesRuntime(t *testing.T) {
+	context := BuildProjectContext(t.TempDir())
+	if !strings.Contains(context, runtime.GOOS+"/"+runtime.GOARCH) || !strings.Contains(context, runtime.Version()) {
+		t.Fatalf("BuildProjectContext() missing runtime: %q", context)
+	}
+}
+
 func TestSetAndGetProjectRoot(t *testing.T) {
 	customDir := "/tmp/custom-project-root"
 	SetProjectRoot(customDir)
@@ -48,4 +57,3 @@ func TestSetAndGetProjectRoot(t *testing.T) {
 		t.Errorf("GetProjectRoot() = %q, want %q", got, customDir)
 	}
 }
-
